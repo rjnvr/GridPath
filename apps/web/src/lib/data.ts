@@ -15,10 +15,10 @@ type ProjectRow = {
   lng: string | number | null
   current_phase: string | null
   current_status: string | null
-  filed_date: string | null
-  ia_signed_date: string | null
-  energized_date: string | null
-  withdrawn_date: string | null
+  filed_date: Date | string | null
+  ia_signed_date: Date | string | null
+  energized_date: Date | string | null
+  withdrawn_date: Date | string | null
   owner_company: string | null
   raw_source_url: string | null
   first_seen_at: string
@@ -52,8 +52,14 @@ function numberOrNull(value: string | number | null): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-function toDateString(value: string | null): string | null {
-  return value ? value.slice(0, 10) : null
+function toDateString(value: Date | string | null): string | null {
+  if (!value) {
+    return null
+  }
+  if (value instanceof Date) {
+    return value.toISOString().slice(0, 10)
+  }
+  return value.slice(0, 10)
 }
 
 function mapChange(row: ChangeRow): ProjectChange {
