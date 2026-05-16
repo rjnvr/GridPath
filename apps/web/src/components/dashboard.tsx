@@ -1,6 +1,6 @@
 "use client"
 
-import type { DashboardData, GridProject } from "@gridpath/shared"
+import type { DashboardData, GridProject, Substation } from "@gridpath/shared"
 import {
   type ColumnDef,
   flexRender,
@@ -10,7 +10,7 @@ import {
   useReactTable
 } from "@tanstack/react-table"
 import { Activity, Database, Filter, MapPin, X } from "lucide-react"
-import maplibregl, { type Map as MapLibreMap } from "maplibre-gl"
+import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from "maplibre-gl"
 import { useEffect, useMemo, useRef, useState } from "react"
 
 const fuelColors: Record<string, string> = {
@@ -19,6 +19,27 @@ const fuelColors: Record<string, string> = {
   storage: "#c084fc",
   gas: "#fb7185"
 }
+
+type ProjectFeatureCollection = GeoJSON.FeatureCollection<
+  GeoJSON.Point,
+  {
+    id: string
+    queueId: string
+    projectName: string
+    mwRequested: number | null
+    fuelType: string
+    currentPhase: string
+    filedDate: string | null
+  }
+>
+
+type SubstationFeatureCollection = GeoJSON.FeatureCollection<
+  GeoJSON.Point,
+  {
+    id: string
+    name: string
+  }
+>
 
 type FilterState = {
   iso: string
@@ -97,6 +118,53 @@ function tileStyle() {
   } satisfies maplibregl.StyleSpecification
 }
 
+function projectsToGeoJson(projects: GridProject[]): ProjectFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: projects
+      .filter((project) => project.lat !== null && project.lng !== null)
+      .map((project) => ({
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [project.lng as number, project.lat as number]
+        },
+        properties: {
+          id: project.id,
+          queueId: project.queueId,
+          projectName: project.projectName ?? project.queueId,
+          mwRequested: project.mwRequested,
+          fuelType: project.fuelType ?? "unknown",
+          currentPhase: project.currentPhase ?? "Unknown",
+          filedDate: project.filedDate
+        }
+      }))
+  }
+}
+
+function substationsToGeoJson(substations: Substation[]): SubstationFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: substations
+      .filter((substation) => substation.lat !== null && substation.lng !== null)
+      .map((substation) => ({
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [substation.lng as number, substation.lat as number]
+        },
+        properties: {
+          id: substation.id,
+          name: substation.name ?? "Substation"
+        }
+      }))
+  }
+}
+
+function projectPopupHtml(project: ProjectFeatureCollection["features"][number]["properties"]) {
+  return `<strong>${project.projectName}</strong><br/>${project.mwRequested ?? "—"} MW · ${project.currentPhase}<br/>Filed ${project.filedDate ?? "—"}`
+}
+
 export function Dashboard({ initialData }: { initialData: DashboardData }) {
   const [filters, setFilters] = useState<FilterState>({
     iso: "all",
@@ -108,8 +176,11 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
   const [selectedProject, setSelectedProject] = useState<GridProject | null>(null)
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
-  const markersRef = useRef<maplibregl.Marker[]>([])
-
+  const popupRef = useRef<maplibregl.Popup | null>(null)
+  const projectsById = useMemo(
+    () => new Map(initialData.projects.map((project) => [project.id, project])),
+    [initialData.projects]
+  )
   const fuelTypes = useMemo(
     () =>
       [
@@ -145,6 +216,11 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
       }),
     [filters, initialData.projects]
   )
+  const filteredProjectsRef = useRef<GridProject[]>(filteredProjects)
+
+  useEffect(() => {
+    filteredProjectsRef.current = filteredProjects
+  }, [filteredProjects])
 
   const table = useReactTable({
     data: filteredProjects,
@@ -165,8 +241,101 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
       center: [-99.35, 31.05],
       zoom: 5.25
     })
-    mapRef.current.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right")
-  }, [])
+    const map = mapRef.current
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right")
+
+    map.on("load", () => {
+      map.addSource("substations", {
+        type: "geojson",
+        data: substationsToGeoJson(initialData.substations)
+      })
+      map.addLayer({
+        id: "substations",
+        type: "circle",
+        source: "substations",
+        paint: {
+          "circle-radius": 3,
+          "circle-color": "#ffffff",
+          "circle-opacity": 0.75,
+          "circle-stroke-width": 1,
+          "circle-stroke-color": "#0f172a"
+        }
+      })
+
+      map.addSource("projects", {
+        type: "geojson",
+        data: projectsToGeoJson(filteredProjectsRef.current)
+      })
+      map.addLayer({
+        id: "projects",
+        type: "circle",
+        source: "projects",
+        paint: {
+          "circle-radius": [
+            "interpolate",
+            ["linear"],
+            ["coalesce", ["get", "mwRequested"], 0],
+            0,
+            4,
+            500,
+            7,
+            1000,
+            10
+          ],
+          "circle-color": [
+            "match",
+            ["get", "fuelType"],
+            "solar",
+            fuelColors.solar,
+            "wind",
+            fuelColors.wind,
+            "storage",
+            fuelColors.storage,
+            "gas",
+            fuelColors.gas,
+            "#2dd4bf"
+          ],
+          "circle-opacity": 0.88,
+          "circle-stroke-width": 1.5,
+          "circle-stroke-color": "#020617"
+        }
+      })
+
+      map.on("mouseenter", "projects", (event) => {
+        map.getCanvas().style.cursor = "pointer"
+        const feature = event.features?.[0] as ProjectFeatureCollection["features"][number] | undefined
+        const coordinates = feature?.geometry.coordinates
+        if (!feature || !coordinates) {
+          return
+        }
+        popupRef.current?.remove()
+        popupRef.current = new maplibregl.Popup({ offset: 12, closeButton: false })
+          .setLngLat(coordinates as [number, number])
+          .setHTML(projectPopupHtml(feature.properties))
+          .addTo(map)
+      })
+
+      map.on("mouseleave", "projects", () => {
+        map.getCanvas().style.cursor = ""
+        popupRef.current?.remove()
+        popupRef.current = null
+      })
+
+      map.on("click", "projects", (event) => {
+        const feature = event.features?.[0] as ProjectFeatureCollection["features"][number] | undefined
+        const projectId = feature?.properties.id
+        if (projectId) {
+          setSelectedProject(projectsById.get(projectId) ?? null)
+        }
+      })
+    })
+
+    return () => {
+      popupRef.current?.remove()
+      map.remove()
+      mapRef.current = null
+    }
+  }, [initialData.substations, projectsById])
 
   useEffect(() => {
     const map = mapRef.current
@@ -184,42 +353,11 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map) {
+    if (!map?.isStyleLoaded() || !map.getSource("projects")) {
       return
     }
-    for (const marker of markersRef.current) {
-      marker.remove()
-    }
-    markersRef.current = []
-
-    for (const substation of initialData.substations) {
-      if (substation.lat === null || substation.lng === null) {
-        continue
-      }
-      const node = document.createElement("button")
-      node.type = "button"
-      node.title = substation.name ?? "Substation"
-      node.className = "h-2 w-2 rounded-full border border-white/80 bg-white/80 shadow"
-      markersRef.current.push(new maplibregl.Marker({ element: node }).setLngLat([substation.lng, substation.lat]).addTo(map))
-    }
-
-    for (const project of filteredProjects) {
-      if (project.lat === null || project.lng === null) {
-        continue
-      }
-      const node = document.createElement("button")
-      node.type = "button"
-      node.className = "h-3.5 w-3.5 rounded-full border-2 border-slate-950 shadow-lg"
-      node.style.background = fuelColors[project.fuelType ?? ""] ?? "#2dd4bf"
-      node.addEventListener("click", () => setSelectedProject(project))
-      const popup = new maplibregl.Popup({ offset: 12 }).setHTML(
-        `<strong>${project.projectName ?? project.queueId}</strong><br/>${project.mwRequested ?? "—"} MW · ${project.currentPhase ?? "Unknown"}<br/>Filed ${project.filedDate ?? "—"}`
-      )
-      markersRef.current.push(
-        new maplibregl.Marker({ element: node }).setLngLat([project.lng, project.lat]).setPopup(popup).addTo(map)
-      )
-    }
-  }, [filteredProjects, initialData.substations])
+    ;(map.getSource("projects") as GeoJSONSource).setData(projectsToGeoJson(filteredProjects))
+  }, [filteredProjects])
 
   return (
     <main className="min-h-screen bg-background text-foreground">
