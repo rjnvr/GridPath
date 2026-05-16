@@ -1,0 +1,44 @@
+name: ERCOT snapshot
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *"
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/ingestion
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+      - name: Run ERCOT ingestion
+        env:
+          DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ERCOT_GIS_URL: ${{ secrets.ERCOT_GIS_URL }}
+        run: python -m gridpath_ingestion.ercot
+      - name: Notify Slack on failure
+        if: failure() && secrets.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          body = json.dumps({"text": "GridPath ERCOT snapshot failed."}).encode()
+          request = urllib.request.Request(
+              os.environ["SLACK_WEBHOOK_URL"],
+              data=body,
+              headers={"Content-Type": "application/json"},
+          )
+          urllib.request.urlopen(request, timeout=10)
+          PY

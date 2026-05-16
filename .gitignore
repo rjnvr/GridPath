@@ -1,6 +1,7 @@
 # Environment variables
 .env
 .env.*
+!.env.example
 
 # Node modules
 node_modules/
@@ -15,6 +16,12 @@ pnpm-debug.log*
 dist/
 build/
 coverage/
+.next/
+*.tsbuildinfo
+.ruff_cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
 
 # OS files
 .DS_Store
