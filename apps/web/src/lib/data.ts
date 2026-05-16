@@ -15,20 +15,20 @@ type ProjectRow = {
   lng: string | number | null
   current_phase: string | null
   current_status: string | null
-  filed_date: string | null
-  ia_signed_date: string | null
-  energized_date: string | null
-  withdrawn_date: string | null
+  filed_date: Date | string | null
+  ia_signed_date: Date | string | null
+  energized_date: Date | string | null
+  withdrawn_date: Date | string | null
   owner_company: string | null
   raw_source_url: string | null
-  first_seen_at: string
-  last_updated_at: string
+  first_seen_at: Date | string
+  last_updated_at: Date | string
 }
 
 type ChangeRow = {
   id: string
   project_id: string
-  changed_at: string
+  changed_at: Date | string
   field_name: string
   old_value: string | null
   new_value: string | null
@@ -52,14 +52,24 @@ function numberOrNull(value: string | number | null): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-function toDateString(value: string | null): string | null {
-  return value ? value.slice(0, 10) : null
+function toIsoString(value: Date | string | null): string | null {
+  if (!value) {
+    return null
+  }
+  if (value instanceof Date) {
+    return value.toISOString()
+  }
+  return value
+}
+
+function toDateString(value: Date | string | null): string | null {
+  return toIsoString(value)?.slice(0, 10) ?? null
 }
 
 function mapChange(row: ChangeRow): ProjectChange {
   return {
     id: row.id,
-    changedAt: row.changed_at,
+    changedAt: toIsoString(row.changed_at) ?? "",
     fieldName: row.field_name,
     oldValue: row.old_value,
     newValue: row.new_value
@@ -86,8 +96,8 @@ function mapProject(row: ProjectRow, changes: ProjectChange[]): GridProject {
     withdrawnDate: toDateString(row.withdrawn_date),
     ownerCompany: row.owner_company,
     rawSourceUrl: row.raw_source_url,
-    firstSeenAt: row.first_seen_at,
-    lastUpdatedAt: row.last_updated_at,
+    firstSeenAt: toIsoString(row.first_seen_at) ?? "",
+    lastUpdatedAt: toIsoString(row.last_updated_at) ?? "",
     changes
   }
 }
@@ -111,12 +121,12 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   const sql = getSql()
   const [projectRows, changeRows, substationRows, freshnessRows] = await Promise.all([
-    sql`select * from projects where iso = 'ERCOT' order by queue_id limit 5000`,
+    sql`select * from projects where iso in ('ERCOT', 'CAISO') order by iso, queue_id limit 10000`,
     sql`
       select c.*
       from project_status_changes c
       join projects p on p.id = c.project_id
-      where p.iso = 'ERCOT'
+      where p.iso in ('ERCOT', 'CAISO')
       order by c.changed_at desc
       limit 2000
     `,
@@ -136,8 +146,10 @@ export async function getDashboardData(): Promise<DashboardData> {
       mapProject(row, changesByProject.get(row.id) ?? [])
     ),
     substations: (substationRows as SubstationRow[]).map(mapSubstation),
-    latestSnapshotAt: String(
-      (freshnessRows as Array<{ latest_snapshot_at: string | null }>)[0]?.latest_snapshot_at ?? ""
-    ) || null
+    latestSnapshotAt:
+      toIsoString(
+        (freshnessRows as Array<{ latest_snapshot_at: Date | string | null }>)[0]
+          ?.latest_snapshot_at ?? null
+      ) ?? null
   }
 }
