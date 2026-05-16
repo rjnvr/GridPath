@@ -44,6 +44,17 @@ ERCOT_GIS_URL="https://example.com/report.xlsx" python -m gridpath_ingestion.erc
 
 The ingestion job is idempotent for `projects`, writes snapshots for every parsed project, and records field-level changes in `project_status_changes`.
 
+## Manual CAISO Ingestion
+
+Download the CAISO Public Queue Report, then run:
+
+```bash
+cd apps/ingestion
+python -m gridpath_ingestion.caiso --file ~/Downloads/publicqueuereport.xlsx
+```
+
+CAISO rows are stored with `iso = 'CAISO'` in the same Neon database and appear in the dashboard through the ISO filter.
+
 ## Web App
 
 ```bash
