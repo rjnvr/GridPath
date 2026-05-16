@@ -22,8 +22,6 @@ EXPECTED_COLUMNS = {
     "Project Name",
     "Fuel",
     "County",
-    "MW",
-    "Status",
 }
 
 COLUMN_ALIASES = {
@@ -32,16 +30,24 @@ COLUMN_ALIASES = {
     "Fuel": "fuel_type",
     "County": "county",
     "MW": "mw_requested",
+    "MW **": "mw_requested",
+    "Capacity (MW)": "mw_requested",
     "Status": "current_status",
+    "GIM Study Phase": "current_status",
+    "Model Ready Date": "filed_date",
     "Interconnection Agreement Signed Date": "ia_signed_date",
     "IA Signed Date": "ia_signed_date",
+    "IA Signed": "ia_signed_date",
     "Energization Date": "energized_date",
     "Energized Date": "energized_date",
+    "Approved for Energization": "energized_date",
     "Withdrawn Date": "withdrawn_date",
+    "Inactive Date": "withdrawn_date",
     "Screening Study Started": "filed_date",
     "Application Received Date": "filed_date",
     "Owner": "owner_company",
     "Developer": "owner_company",
+    "Interconnecting Entity": "owner_company",
 }
 
 TRACKED_FIELDS = [
@@ -115,8 +121,20 @@ def normalize_header(value: Any) -> str:
 def assert_expected_columns(columns: list[str]) -> None:
     normalized = {normalize_header(column) for column in columns}
     missing = sorted(EXPECTED_COLUMNS - normalized)
+    has_capacity = "Capacity (MW)" in normalized or "MW" in normalized or "MW **" in normalized
+    if not has_capacity:
+        missing.append("Capacity (MW) or MW")
     if missing:
         raise ValueError(f"ERCOT schema drift detected. Missing expected columns: {missing}")
+
+
+def find_header_row(path: Path, sheet_name: str) -> int:
+    preview = pd.read_excel(path, sheet_name=sheet_name, header=None, nrows=80)
+    for index, row in preview.iterrows():
+        values = {normalize_header(value) for value in row.tolist() if not pd.isna(value)}
+        if {"INR", "Project Name", "Fuel", "County"}.issubset(values):
+            return int(index)
+    raise ValueError(f"ERCOT schema drift detected. Could not find header row in {sheet_name}.")
 
 
 def normalize_fuel(value: Any) -> str | None:
@@ -199,14 +217,25 @@ def row_to_project(row: dict[str, Any], source_url: str | None = None) -> ErcotP
 
 
 def parse_workbook(path: Path, source_url: str | None = None) -> list[ErcotProject]:
-    frame = pd.read_excel(path)
-    frame.columns = [normalize_header(column) for column in frame.columns]
-    assert_expected_columns(list(frame.columns))
     projects: list[ErcotProject] = []
-    for row in frame.to_dict(orient="records"):
-        project = row_to_project(row, source_url)
-        if project:
-            projects.append(project)
+    workbook = pd.ExcelFile(path)
+    detail_sheets = [
+        sheet
+        for sheet in workbook.sheet_names
+        if sheet in {"Project Details - Large Gen", "Project Details - Small Gen"}
+    ]
+    if not detail_sheets:
+        raise ValueError("ERCOT schema drift detected. Missing project detail sheets.")
+
+    for sheet_name in detail_sheets:
+        header_row = find_header_row(path, sheet_name)
+        frame = pd.read_excel(path, sheet_name=sheet_name, header=header_row)
+        frame.columns = [normalize_header(column) for column in frame.columns]
+        assert_expected_columns(list(frame.columns))
+        for row in frame.to_dict(orient="records"):
+            project = row_to_project(row, source_url)
+            if project:
+                projects.append(project)
     return projects
 
 

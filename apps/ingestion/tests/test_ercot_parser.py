@@ -14,21 +14,32 @@ def write_workbook(path: Path, rows: list[dict[str, object]]) -> None:
 
 def test_parser_normalizes_required_fields(tmp_path: Path) -> None:
     workbook = tmp_path / "ercot.xlsx"
-    write_workbook(
-        workbook,
-        [
-            {
-                "INR": "24INR001",
-                "Project Name": "Big Solar",
-                "Fuel": "Solar PV",
-                "County": "Harris",
-                "MW": "250",
-                "Status": "FIS",
-                "Application Received Date": "2024-01-05",
-                "Owner": "Acme Energy",
-            }
-        ],
-    )
+    with pd.ExcelWriter(workbook) as writer:
+        pd.DataFrame({"Notes": ["ignore", "ignore"]}).to_excel(
+            writer,
+            sheet_name="Project Details - Large Gen",
+            index=False,
+            header=False,
+        )
+        pd.DataFrame(
+            [
+                {
+                    "INR": "24INR001",
+                    "Project Name": "Big Solar",
+                    "Fuel": "Solar PV",
+                    "County": "Harris",
+                    "Capacity (MW)": "250",
+                    "GIM Study Phase": "FIS",
+                    "Screening Study Started": "2024-01-05",
+                    "Interconnecting Entity": "Acme Energy",
+                }
+            ],
+        ).to_excel(
+            writer,
+            sheet_name="Project Details - Large Gen",
+            index=False,
+            startrow=2,
+        )
 
     projects = parse_workbook(workbook)
 
@@ -47,18 +58,18 @@ def test_schema_drift_fails_loudly() -> None:
 
 def test_parser_skips_rows_without_queue_id(tmp_path: Path) -> None:
     workbook = tmp_path / "ercot.xlsx"
-    write_workbook(
-        workbook,
-        [
-            {
-                "INR": "",
-                "Project Name": "No Queue ID",
-                "Fuel": "Wind",
-                "County": "Dallas",
-                "MW": "100",
-                "Status": "Planning",
-            }
-        ],
-    )
+    with pd.ExcelWriter(workbook) as writer:
+        pd.DataFrame(
+            [
+                {
+                    "INR": "",
+                    "Project Name": "No Queue ID",
+                    "Fuel": "Wind",
+                    "County": "Dallas",
+                    "Capacity (MW)": "100",
+                    "GIM Study Phase": "Planning",
+                }
+            ],
+        ).to_excel(writer, sheet_name="Project Details - Large Gen", index=False)
 
     assert parse_workbook(workbook) == []
