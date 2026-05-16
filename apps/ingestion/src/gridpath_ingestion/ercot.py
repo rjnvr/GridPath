@@ -297,9 +297,12 @@ def upsert_projects(projects: list[ErcotProject], database_url: str) -> dict[str
                         )
                         values (
                           %(iso)s, %(queue_id)s, %(project_name)s, %(mw_requested)s, %(fuel_type)s,
-                          %(county)s, %(state)s, %(lat)s, %(lng)s,
-                          case when %(lat)s is null or %(lng)s is null then null
-                               else st_setsrid(st_makepoint(%(lng)s, %(lat)s), 4326) end,
+                          %(county)s, %(state)s, %(lat)s::numeric, %(lng)s::numeric,
+                          case when %(lat)s::numeric is null or %(lng)s::numeric is null then null
+                               else st_setsrid(
+                                 st_makepoint(%(lng)s::double precision, %(lat)s::double precision),
+                                 4326
+                               ) end,
                           %(current_phase)s, %(current_status)s, %(filed_date)s,
                           %(ia_signed_date)s, %(energized_date)s, %(withdrawn_date)s,
                           %(owner_company)s, %(raw_source_url)s, now(), now()
