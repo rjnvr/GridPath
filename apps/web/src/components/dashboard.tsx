@@ -21,6 +21,7 @@ const fuelColors: Record<string, string> = {
 }
 
 type FilterState = {
+  iso: string
   fuelType: string
   phase: string
   mwBucket: string
@@ -98,6 +99,7 @@ function tileStyle() {
 
 export function Dashboard({ initialData }: { initialData: DashboardData }) {
   const [filters, setFilters] = useState<FilterState>({
+    iso: "all",
     fuelType: "all",
     phase: "all",
     mwBucket: "all"
@@ -109,21 +111,37 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
   const markersRef = useRef<maplibregl.Marker[]>([])
 
   const fuelTypes = useMemo(
-    () => [...new Set(initialData.projects.map((project) => project.fuelType).filter(Boolean))].sort(),
-    [initialData.projects]
+    () =>
+      [
+        ...new Set(
+          initialData.projects
+            .filter((project) => filters.iso === "all" || project.iso === filters.iso)
+            .map((project) => project.fuelType)
+            .filter(Boolean)
+        )
+      ].sort(),
+    [filters.iso, initialData.projects]
   )
   const phases = useMemo(
     () =>
-      [...new Set(initialData.projects.map((project) => project.currentPhase).filter(Boolean))].sort(),
-    [initialData.projects]
+      [
+        ...new Set(
+          initialData.projects
+            .filter((project) => filters.iso === "all" || project.iso === filters.iso)
+            .map((project) => project.currentPhase)
+            .filter(Boolean)
+        )
+      ].sort(),
+    [filters.iso, initialData.projects]
   )
 
   const filteredProjects = useMemo(
     () =>
       initialData.projects.filter((project) => {
+        const isoMatch = filters.iso === "all" || project.iso === filters.iso
         const fuelMatch = filters.fuelType === "all" || project.fuelType === filters.fuelType
         const phaseMatch = filters.phase === "all" || project.currentPhase === filters.phase
-        return fuelMatch && phaseMatch && passesMwBucket(project, filters.mwBucket)
+        return isoMatch && fuelMatch && phaseMatch && passesMwBucket(project, filters.mwBucket)
       }),
     [filters, initialData.projects]
   )
@@ -149,6 +167,20 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     })
     mapRef.current.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right")
   }, [])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) {
+      return
+    }
+    if (filters.iso === "ERCOT") {
+      map.easeTo({ center: [-99.35, 31.05], zoom: 5.25, duration: 600 })
+    } else if (filters.iso === "CAISO") {
+      map.easeTo({ center: [-119.5, 36.8], zoom: 5.2, duration: 600 })
+    } else {
+      map.easeTo({ center: [-109.5, 34.4], zoom: 4.1, duration: 600 })
+    }
+  }, [filters.iso])
 
   useEffect(() => {
     const map = mapRef.current
@@ -223,6 +255,22 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         <div className="overflow-hidden bg-panel">
           <div className="flex items-center gap-3 border-b border-border px-4 py-3">
             <Filter size={16} className="text-muted" />
+            <select
+              value={filters.iso}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  iso: event.target.value,
+                  fuelType: "all",
+                  phase: "all"
+                }))
+              }
+              className="rounded border border-border bg-background px-3 py-2 text-sm"
+            >
+              <option value="all">All ISOs</option>
+              <option value="ERCOT">ERCOT</option>
+              <option value="CAISO">CAISO</option>
+            </select>
             <select
               value={filters.fuelType}
               onChange={(event) => setFilters((current) => ({ ...current, fuelType: event.target.value }))}

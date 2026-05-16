@@ -12,10 +12,10 @@ from typing import Any
 
 import httpx
 import pandas as pd
-import psycopg
-from pydantic import BaseModel, ConfigDict, Field
 
-from gridpath_ingestion.county_centroids import centroid_for_county
+from gridpath_ingestion.centroids import centroid_for_county
+from gridpath_ingestion.db import upsert_projects
+from gridpath_ingestion.models import QueueProject
 
 EXPECTED_COLUMNS = {
     "INR",
@@ -50,22 +50,6 @@ COLUMN_ALIASES = {
     "Interconnecting Entity": "owner_company",
 }
 
-TRACKED_FIELDS = [
-    "project_name",
-    "mw_requested",
-    "fuel_type",
-    "county",
-    "lat",
-    "lng",
-    "current_phase",
-    "current_status",
-    "filed_date",
-    "ia_signed_date",
-    "energized_date",
-    "withdrawn_date",
-    "owner_company",
-]
-
 FUEL_MAP = {
     "battery": "storage",
     "bess": "storage",
@@ -89,29 +73,6 @@ PHASE_MAP = {
     "energized": "Energized",
     "withdrawn": "Withdrawn",
 }
-
-
-class ErcotProject(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    iso: str = "ERCOT"
-    queue_id: str
-    project_name: str | None = None
-    mw_requested: Decimal | None = None
-    fuel_type: str | None = None
-    county: str | None = None
-    state: str = "TX"
-    lat: float | None = None
-    lng: float | None = None
-    current_phase: str | None = None
-    current_status: str | None = None
-    filed_date: date | None = None
-    ia_signed_date: date | None = None
-    energized_date: date | None = None
-    withdrawn_date: date | None = None
-    owner_company: str | None = None
-    raw_source_url: str | None = None
-    raw_data: dict[str, Any] = Field(default_factory=dict)
 
 
 def normalize_header(value: Any) -> str:
@@ -182,7 +143,7 @@ def clean_text(value: Any) -> str | None:
     return text or None
 
 
-def row_to_project(row: dict[str, Any], source_url: str | None = None) -> ErcotProject | None:
+def row_to_project(row: dict[str, Any], source_url: str | None = None) -> QueueProject | None:
     mapped: dict[str, Any] = {}
     for source, target in COLUMN_ALIASES.items():
         if source in row:
@@ -193,10 +154,11 @@ def row_to_project(row: dict[str, Any], source_url: str | None = None) -> ErcotP
         return None
 
     county = clean_text(mapped.get("county"))
-    lat, lng = centroid_for_county(county)
+    lat, lng = centroid_for_county(county, "TX")
     current_status = clean_text(mapped.get("current_status"))
 
-    return ErcotProject(
+    return QueueProject(
+        iso="ERCOT",
         queue_id=queue_id,
         project_name=clean_text(mapped.get("project_name")),
         mw_requested=parse_decimal(mapped.get("mw_requested")),
@@ -216,8 +178,8 @@ def row_to_project(row: dict[str, Any], source_url: str | None = None) -> ErcotP
     )
 
 
-def parse_workbook(path: Path, source_url: str | None = None) -> list[ErcotProject]:
-    projects: list[ErcotProject] = []
+def parse_workbook(path: Path, source_url: str | None = None) -> list[QueueProject]:
+    projects: list[QueueProject] = []
     workbook = pd.ExcelFile(path)
     detail_sheets = [
         sheet
@@ -245,137 +207,6 @@ def download_report(url: str) -> Path:
     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as handle:
         handle.write(response.content)
         return Path(handle.name)
-
-
-def value_for_sql(value: Any) -> Any:
-    if isinstance(value, Decimal):
-        return str(value)
-    if isinstance(value, date):
-        return value.isoformat()
-    return value
-
-
-def comparable(value: Any) -> str | None:
-    sql_value = value_for_sql(value)
-    return None if sql_value is None else str(sql_value)
-
-
-def upsert_projects(projects: list[ErcotProject], database_url: str) -> dict[str, int]:
-    stats = {
-        "projects_seen": len(projects),
-        "projects_inserted": 0,
-        "projects_updated": 0,
-        "snapshots_written": 0,
-        "changes_written": 0,
-        "errors": 0,
-    }
-    with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
-            for project in projects:
-                try:
-                    existing = cursor.execute(
-                        "select * from projects where iso = %s and queue_id = %s",
-                        (project.iso, project.queue_id),
-                    ).fetchone()
-                    columns = (
-                        [desc.name for desc in cursor.description] if cursor.description else []
-                    )
-                    existing_record = (
-                        dict(zip(columns, existing, strict=False)) if existing else None
-                    )
-
-                    values = {
-                        field: value_for_sql(getattr(project, field))
-                        for field in TRACKED_FIELDS
-                    }
-                    cursor.execute(
-                        """
-                        insert into projects (
-                          iso, queue_id, project_name, mw_requested, fuel_type, county, state,
-                          lat, lng, geom, current_phase, current_status, filed_date,
-                          ia_signed_date, energized_date, withdrawn_date, owner_company,
-                          raw_source_url, first_seen_at, last_updated_at
-                        )
-                        values (
-                          %(iso)s, %(queue_id)s, %(project_name)s, %(mw_requested)s, %(fuel_type)s,
-                          %(county)s, %(state)s, %(lat)s::numeric, %(lng)s::numeric,
-                          case when %(lat)s::numeric is null or %(lng)s::numeric is null then null
-                               else st_setsrid(
-                                 st_makepoint(%(lng)s::double precision, %(lat)s::double precision),
-                                 4326
-                               ) end,
-                          %(current_phase)s, %(current_status)s, %(filed_date)s,
-                          %(ia_signed_date)s, %(energized_date)s, %(withdrawn_date)s,
-                          %(owner_company)s, %(raw_source_url)s, now(), now()
-                        )
-                        on conflict (iso, queue_id) do update set
-                          project_name = excluded.project_name,
-                          mw_requested = excluded.mw_requested,
-                          fuel_type = excluded.fuel_type,
-                          county = excluded.county,
-                          state = excluded.state,
-                          lat = excluded.lat,
-                          lng = excluded.lng,
-                          geom = excluded.geom,
-                          current_phase = excluded.current_phase,
-                          current_status = excluded.current_status,
-                          filed_date = excluded.filed_date,
-                          ia_signed_date = excluded.ia_signed_date,
-                          energized_date = excluded.energized_date,
-                          withdrawn_date = excluded.withdrawn_date,
-                          owner_company = excluded.owner_company,
-                          raw_source_url = excluded.raw_source_url,
-                          last_updated_at = now()
-                        returning id
-                        """,
-                        {
-                            "iso": project.iso,
-                            "queue_id": project.queue_id,
-                            "state": project.state,
-                            "raw_source_url": project.raw_source_url,
-                            **values,
-                        },
-                    )
-                    project_id = cursor.fetchone()[0]
-                    stats[
-                        "projects_inserted" if existing_record is None else "projects_updated"
-                    ] += 1
-
-                    if existing_record:
-                        for field, new_value in values.items():
-                            old_value = comparable(existing_record.get(field))
-                            new_comparable = comparable(new_value)
-                            if old_value != new_comparable:
-                                cursor.execute(
-                                    """
-                                    insert into project_status_changes
-                                      (project_id, field_name, old_value, new_value)
-                                    values (%s, %s, %s, %s)
-                                    """,
-                                    (project_id, field, old_value, new_comparable),
-                                )
-                                stats["changes_written"] += 1
-
-                    cursor.execute(
-                        """
-                        insert into project_snapshots (
-                          project_id, snapshot_date, raw_data, current_phase,
-                          current_status, mw_requested
-                        )
-                        values (%s, current_date, %s, %s, %s, %s)
-                        """,
-                        (
-                            project_id,
-                            json.dumps(project.raw_data, default=str),
-                            project.current_phase,
-                            project.current_status,
-                            value_for_sql(project.mw_requested),
-                        ),
-                    )
-                    stats["snapshots_written"] += 1
-                except Exception:
-                    stats["errors"] += 1
-                    raise
-    return stats
 
 
 def main(argv: list[str] | None = None) -> int:

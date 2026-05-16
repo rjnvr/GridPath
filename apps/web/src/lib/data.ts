@@ -117,12 +117,12 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   const sql = getSql()
   const [projectRows, changeRows, substationRows, freshnessRows] = await Promise.all([
-    sql`select * from projects where iso = 'ERCOT' order by queue_id limit 5000`,
+    sql`select * from projects where iso in ('ERCOT', 'CAISO') order by iso, queue_id limit 10000`,
     sql`
       select c.*
       from project_status_changes c
       join projects p on p.id = c.project_id
-      where p.iso = 'ERCOT'
+      where p.iso in ('ERCOT', 'CAISO')
       order by c.changed_at desc
       limit 2000
     `,
