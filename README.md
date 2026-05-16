@@ -1,0 +1,67 @@
+# GridPath
+
+GridPath is an ERCOT-first interconnection queue intelligence app. It stores normalized queue records in Neon Postgres with PostGIS, snapshots every ingestion run, tracks field-level changes, and renders the latest data in a desktop-focused Next.js dashboard.
+
+## Structure
+
+- `apps/web` - Next.js App Router dashboard.
+- `apps/ingestion` - Python ERCOT and HIFLD ingestion tooling.
+- `packages/shared` - shared TypeScript types.
+- `db/migrations` - SQL migrations for Neon/Postgres.
+- `db/queries` - operational SQL checks.
+
+## Setup
+
+1. Copy `.env.example` to `.env.local` for the web app and to your shell environment for ingestion.
+2. Create a Neon database and enable PostGIS by running the initial migration:
+
+   ```bash
+   npm run migrate
+   ```
+
+3. Install dependencies:
+
+   ```bash
+   npm install
+   cd apps/ingestion && python -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
+   ```
+
+## Manual ERCOT Ingestion
+
+Run against a local Excel file:
+
+```bash
+cd apps/ingestion
+python -m gridpath_ingestion.ercot --file path/to/ercot.xlsx
+```
+
+Run by downloading from `ERCOT_GIS_URL`:
+
+```bash
+cd apps/ingestion
+ERCOT_GIS_URL="https://example.com/report.xlsx" python -m gridpath_ingestion.ercot
+```
+
+The ingestion job is idempotent for `projects`, writes snapshots for every parsed project, and records field-level changes in `project_status_changes`.
+
+## Web App
+
+```bash
+npm run dev
+```
+
+The app queries Neon only from server-side Next.js code. Database credentials are never sent to the browser.
+
+## Operations
+
+- Daily ingestion is configured in `.github/workflows/ercot-snapshot.yml`.
+- Freshness check SQL lives in `db/queries/freshness_check.sql`.
+- First-month change review SQL lives in `db/queries/todays_changes.sql`.
+- Verify Neon backup/PITR retention for the selected plan before relying on production snapshots as the long-term asset.
+
+## Known Limitations
+
+- ERCOT only.
+- County-centroid project locations.
+- Desktop-first UI.
+- No auth, billing, forecasting, alerts, or transmission lines yet.

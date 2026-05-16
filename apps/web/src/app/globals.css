@@ -1,0 +1,38 @@
+@import "maplibre-gl/dist/maplibre-gl.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  min-height: 100%;
+  background: #080b0f;
+  color: #eef2f7;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.maplibregl-popup-content {
+  background: #10161f;
+  border: 1px solid #243140;
+  border-radius: 8px;
+  color: #eef2f7;
+  padding: 10px 12px;
+}
+
+.maplibregl-popup-tip {
+  border-top-color: #10161f;
+}
