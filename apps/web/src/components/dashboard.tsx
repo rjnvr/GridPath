@@ -365,9 +365,9 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         <div className="flex items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-normal">GridPath</h1>
-            <p className="text-sm text-muted">ERCOT interconnection queue intelligence</p>
+            <p className="text-sm text-muted-foreground">ERCOT interconnection queue intelligence</p>
           </div>
-          <div className="flex items-center gap-3 text-sm text-muted">
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
             <span className="inline-flex items-center gap-2 rounded border border-border px-3 py-2">
               <Database size={16} />
               {freshnessText(initialData.latestSnapshotAt)}
@@ -384,7 +384,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         <div className="relative border-b border-border">
           <div ref={mapContainerRef} className="absolute inset-0" />
           {initialData.projects.length === 0 ? (
-            <div className="absolute left-6 top-6 rounded border border-border bg-panel px-4 py-3 text-sm text-muted">
+            <div className="absolute left-6 top-6 rounded border border-border bg-panel px-4 py-3 text-sm text-muted-foreground">
               Set `DATABASE_URL`, run migrations, and ingest ERCOT data to populate the map.
             </div>
           ) : null}
@@ -392,7 +392,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
 
         <div className="overflow-hidden bg-panel">
           <div className="flex items-center gap-3 border-b border-border px-4 py-3">
-            <Filter size={16} className="text-muted" />
+            <Filter size={16} className="text-muted-foreground" />
             <select
               value={filters.iso}
               onChange={(event) =>
@@ -447,7 +447,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
 
           <div className="h-full overflow-auto">
             <table className="w-full border-collapse text-left text-sm">
-              <thead className="sticky top-0 bg-panel text-xs uppercase text-muted">
+              <thead className="sticky top-0 bg-panel text-xs uppercase text-muted-foreground">
                 {table.getHeaderGroups().map((headerGroup) => (
                   <tr key={headerGroup.id}>
                     {headerGroup.headers.map((header) => (
@@ -511,7 +511,7 @@ function ProjectDrawer({ project, onClose }: { project: GridProject; onClose: ()
     <aside className="fixed right-0 top-0 z-20 h-screen w-[420px] border-l border-border bg-panel shadow-2xl">
       <div className="flex items-start justify-between border-b border-border p-5">
         <div>
-          <p className="font-mono text-xs text-muted">{project.queueId}</p>
+          <p className="font-mono text-xs text-muted-foreground">{project.queueId}</p>
           <h2 className="mt-1 text-xl font-semibold">{project.projectName ?? "Unnamed project"}</h2>
         </div>
         <button type="button" onClick={onClose} className="rounded border border-border p-2" aria-label="Close">
@@ -520,23 +520,23 @@ function ProjectDrawer({ project, onClose }: { project: GridProject; onClose: ()
       </div>
       <div className="space-y-6 overflow-y-auto p-5">
         <section>
-          <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-muted">
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
             <MapPin size={16} />
             Project fields
           </h3>
           <dl className="grid grid-cols-2 gap-3 text-sm">
             {fields.map(([label, value]) => (
               <div key={label} className="rounded border border-border bg-background p-3">
-                <dt className="text-xs text-muted">{label}</dt>
+                <dt className="text-xs text-muted-foreground">{label}</dt>
                 <dd className="mt-1">{value ?? "—"}</dd>
               </div>
             ))}
           </dl>
         </section>
         <section>
-          <h3 className="mb-3 text-sm font-medium text-muted">Change history</h3>
+          <h3 className="mb-3 text-sm font-medium text-muted-foreground">Change history</h3>
           {project.changes.length === 0 ? (
-            <p className="rounded border border-border bg-background p-3 text-sm text-muted">
+            <p className="rounded border border-border bg-background p-3 text-sm text-muted-foreground">
               No tracked changes yet.
             </p>
           ) : (
@@ -545,9 +545,9 @@ function ProjectDrawer({ project, onClose }: { project: GridProject; onClose: ()
                 <div key={change.id} className="rounded border border-border bg-background p-3 text-sm">
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-medium">{change.fieldName}</span>
-                    <span className="font-mono text-xs text-muted">{new Date(change.changedAt).toLocaleString()}</span>
+                    <span className="font-mono text-xs text-muted-foreground">{new Date(change.changedAt).toLocaleString()}</span>
                   </div>
-                  <p className="mt-2 text-muted">
+                  <p className="mt-2 text-muted-foreground">
                     {change.oldValue ?? "—"} → {change.newValue ?? "—"}
                   </p>
                 </div>
