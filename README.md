@@ -42,6 +42,8 @@ cd apps/ingestion
 ERCOT_GIS_URL="https://example.com/report.xlsx" python -m gridpath_ingestion.ercot
 ```
 
+If `ERCOT_GIS_URL` is omitted, the script discovers the latest public GIS workbook from ERCOT's GIS Report data product.
+
 The ingestion job is idempotent for `projects`, writes snapshots for every parsed project, and records field-level changes in `project_status_changes`.
 
 ## Manual CAISO Ingestion
@@ -55,6 +57,12 @@ python -m gridpath_ingestion.caiso --file ~/Downloads/publicqueuereport.xlsx
 
 CAISO rows are stored with `iso = 'CAISO'` in the same Neon database and appear in the dashboard through the ISO filter.
 
+If no file or `CAISO_QUEUE_URL` is provided, the script discovers `publicqueuereport.xlsx` from the CAISO Public Queue Report library page.
+
+## Data Health
+
+Visit `/health` in the web app to inspect latest snapshot time by ISO, project counts, phase/fuel breakdowns, and recent tracked changes.
+
 ## Web App
 
 ```bash
@@ -65,7 +73,7 @@ The app queries Neon only from server-side Next.js code. Database credentials ar
 
 ## Operations
 
-- Daily ingestion is configured in `.github/workflows/ercot-snapshot.yml`.
+- Daily ERCOT and CAISO ingestion is configured in `.github/workflows/ercot-snapshot.yml`.
 - Freshness check SQL lives in `db/queries/freshness_check.sql`.
 - First-month change review SQL lives in `db/queries/todays_changes.sql`.
 - Verify Neon backup/PITR retention for the selected plan before relying on production snapshots as the long-term asset.
