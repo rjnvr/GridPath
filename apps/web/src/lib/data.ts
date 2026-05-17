@@ -1,4 +1,11 @@
-import type { DashboardData, GridProject, ProjectChange, Substation } from "@gridpath/shared"
+import type {
+  DashboardData,
+  GridProject,
+  HealthData,
+  ProjectChange,
+  RecentChange,
+  Substation
+} from "@gridpath/shared"
 
 import { getSql } from "@/lib/db"
 
@@ -42,6 +49,30 @@ type SubstationRow = {
   voltage_kv: string | number | null
   lat: string | number | null
   lng: string | number | null
+}
+
+type IsoHealthRow = {
+  iso: string
+  project_count: string | number
+  latest_snapshot_at: Date | string | null
+  snapshot_fresh: boolean
+}
+
+type BreakdownRow = {
+  iso: string
+  label: string | null
+  count: string | number
+}
+
+type RecentChangeRow = {
+  id: string
+  iso: string
+  queue_id: string
+  project_name: string | null
+  changed_at: Date | string
+  field_name: string
+  old_value: string | null
+  new_value: string | null
 }
 
 function numberOrNull(value: string | number | null): number | null {
@@ -151,5 +182,102 @@ export async function getDashboardData(): Promise<DashboardData> {
         (freshnessRows as Array<{ latest_snapshot_at: Date | string | null }>)[0]
           ?.latest_snapshot_at ?? null
       ) ?? null
+  }
+}
+
+function countValue(value: string | number): number {
+  return Number(value)
+}
+
+function mapRecentChange(row: RecentChangeRow): RecentChange {
+  return {
+    id: row.id,
+    iso: row.iso,
+    queueId: row.queue_id,
+    projectName: row.project_name,
+    changedAt: toIsoString(row.changed_at) ?? "",
+    fieldName: row.field_name,
+    oldValue: row.old_value,
+    newValue: row.new_value
+  }
+}
+
+export async function getHealthData(): Promise<HealthData> {
+  const generatedAt = new Date().toISOString()
+  if (!process.env.DATABASE_URL) {
+    return {
+      generatedAt,
+      isoHealth: [],
+      phaseCounts: [],
+      fuelCounts: [],
+      recentChanges: []
+    }
+  }
+
+  const sql = getSql()
+  const [isoRows, phaseRows, fuelRows, changeRows] = await Promise.all([
+    sql`
+      select
+        p.iso,
+        count(distinct p.id) as project_count,
+        max(s.captured_at) as latest_snapshot_at,
+        coalesce(max(s.captured_at) >= now() - interval '25 hours', false) as snapshot_fresh
+      from projects p
+      left join project_snapshots s on s.project_id = p.id
+      where p.iso in ('ERCOT', 'CAISO')
+      group by p.iso
+      order by p.iso
+    `,
+    sql`
+      select iso, coalesce(current_phase, 'Unknown') as label, count(*) as count
+      from projects
+      where iso in ('ERCOT', 'CAISO')
+      group by iso, coalesce(current_phase, 'Unknown')
+      order by iso, count desc
+    `,
+    sql`
+      select iso, coalesce(fuel_type, 'unknown') as label, count(*) as count
+      from projects
+      where iso in ('ERCOT', 'CAISO')
+      group by iso, coalesce(fuel_type, 'unknown')
+      order by iso, count desc
+    `,
+    sql`
+      select
+        c.id,
+        p.iso,
+        p.queue_id,
+        p.project_name,
+        c.changed_at,
+        c.field_name,
+        c.old_value,
+        c.new_value
+      from project_status_changes c
+      join projects p on p.id = c.project_id
+      where p.iso in ('ERCOT', 'CAISO')
+      order by c.changed_at desc
+      limit 50
+    `
+  ])
+
+  return {
+    generatedAt,
+    isoHealth: (isoRows as IsoHealthRow[]).map((row) => ({
+      iso: row.iso,
+      projectCount: countValue(row.project_count),
+      latestSnapshotAt: toIsoString(row.latest_snapshot_at),
+      snapshotFresh: row.snapshot_fresh
+    })),
+    phaseCounts: (phaseRows as BreakdownRow[]).map((row) => ({
+      iso: row.iso,
+      label: row.label ?? "Unknown",
+      count: countValue(row.count)
+    })),
+    fuelCounts: (fuelRows as BreakdownRow[]).map((row) => ({
+      iso: row.iso,
+      label: row.label ?? "unknown",
+      count: countValue(row.count)
+    })),
+    recentChanges: (changeRows as RecentChangeRow[]).map(mapRecentChange)
   }
 }

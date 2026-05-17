@@ -22,13 +22,11 @@ jobs:
         env:
           DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          ERCOT_GIS_URL: ${{ secrets.ERCOT_GIS_URL }}
         run: python -m gridpath_ingestion.ercot
       - name: Run CAISO ingestion
         env:
           DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          CAISO_QUEUE_URL: ${{ secrets.CAISO_QUEUE_URL }}
         run: python -m gridpath_ingestion.caiso
       - name: Notify Slack on failure
         if: failure() && secrets.SLACK_WEBHOOK_URL != ''

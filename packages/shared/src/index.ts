@@ -47,3 +47,35 @@ export type DashboardData = {
   substations: Substation[]
   latestSnapshotAt: string | null
 }
+
+export type IsoHealth = {
+  iso: string
+  projectCount: number
+  latestSnapshotAt: string | null
+  snapshotFresh: boolean
+}
+
+export type HealthBreakdown = {
+  iso: string
+  label: string
+  count: number
+}
+
+export type RecentChange = {
+  id: string
+  iso: string
+  queueId: string
+  projectName: string | null
+  changedAt: string
+  fieldName: string
+  oldValue: string | null
+  newValue: string | null
+}
+
+export type HealthData = {
+  generatedAt: string
+  isoHealth: IsoHealth[]
+  phaseCounts: HealthBreakdown[]
+  fuelCounts: HealthBreakdown[]
+  recentChanges: RecentChange[]
+}

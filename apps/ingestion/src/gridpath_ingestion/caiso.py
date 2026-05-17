@@ -15,6 +15,7 @@ import pandas as pd
 
 from gridpath_ingestion.centroids import centroid_for_county
 from gridpath_ingestion.db import upsert_projects
+from gridpath_ingestion.discovery import discover_latest_caiso_public_queue_report
 from gridpath_ingestion.models import QueueProject
 
 PROJECT_SHEETS = {
@@ -218,7 +219,18 @@ def main(argv: list[str] | None = None) -> int:
     workbook = args.file
     if not workbook:
         if not source_url:
-            raise SystemExit("Provide --file or CAISO_QUEUE_URL.")
+            report = discover_latest_caiso_public_queue_report()
+            source_url = report.url
+            print(
+                json.dumps(
+                    {
+                        "event": "discovered_report",
+                        "iso": "CAISO",
+                        "name": report.name,
+                    },
+                    sort_keys=True,
+                )
+            )
         workbook = download_report(source_url)
 
     projects = parse_workbook(workbook, source_url)
