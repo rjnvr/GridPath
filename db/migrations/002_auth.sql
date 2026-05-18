@@ -42,6 +42,13 @@ create table if not exists verification_token (
 create index if not exists accounts_userid_idx on accounts ("userId");
 create index if not exists sessions_userid_idx on sessions ("userId");
 
--- The web app uses DIRECT_DATABASE_URL (ingestion_user) for auth writes.
--- Make sure that role can read/write these tables.
-grant select, insert, update, delete on users, accounts, sessions, verification_token to ingestion_user;
+-- The web app uses DIRECT_DATABASE_URL for auth writes. Grant to ingestion_user
+-- only in databases where that role exists.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'ingestion_user') then
+    grant select, insert, update, delete on users, accounts, sessions, verification_token
+      to ingestion_user;
+  end if;
+end;
+$$;

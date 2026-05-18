@@ -1,14 +1,16 @@
 import type {
+  AnalysisData,
   DashboardData,
+  FuelMixTrend,
   GridProject,
   HealthData,
-  AnalysisData,
-  FuelMixTrend,
   IsoCoverage,
   MonthlyChangeTrend,
   MonthlyProjectTrend,
   ProjectChange,
+  QueueEvent,
   RecentChange,
+  SourceReportHealth,
   Substation
 } from "@gridpath/shared"
 
@@ -80,6 +82,44 @@ type RecentChangeRow = {
   new_value: string | null
 }
 
+type QueueEventRow = {
+  id: string
+  project_id: string
+  iso: string
+  queue_id: string
+  project_name: string | null
+  source_url: string | null
+  source_name: string | null
+  event_type: QueueEvent["eventType"]
+  severity: QueueEvent["severity"]
+  title: string
+  description: string
+  field_name: string | null
+  old_value: string | null
+  new_value: string | null
+  delta_mw: string | number | null
+  event_at: Date | string
+  created_at: Date | string
+}
+
+type SourceReportRow = {
+  id: string
+  iso: string
+  source_url: string
+  source_name: string | null
+  published_at: Date | string | null
+  report_date: Date | string | null
+  status: string
+  error_message: string | null
+  started_at: Date | string | null
+  completed_at: Date | string | null
+}
+
+type EventSeverityRow = {
+  severity: string
+  count: string | number
+}
+
 type CoverageRow = {
   iso: string
   first_report_date: Date | string | null
@@ -130,6 +170,13 @@ function toDateString(value: Date | string | null): string | null {
   return toIsoString(value)?.slice(0, 10) ?? null
 }
 
+function isUndefinedRelationError(error: unknown): boolean {
+  const err = error as { code?: string; message?: string } | null
+  if (!err) return false
+  if (err.code === "42P01" || err.code === "42703") return true
+  return typeof err.message === "string" && /(relation|column) .* does not exist/i.test(err.message)
+}
+
 function mapChange(row: ChangeRow): ProjectChange {
   return {
     id: row.id,
@@ -140,7 +187,7 @@ function mapChange(row: ChangeRow): ProjectChange {
   }
 }
 
-function mapProject(row: ProjectRow, changes: ProjectChange[]): GridProject {
+function mapProject(row: ProjectRow, changes: ProjectChange[], events: QueueEvent[]): GridProject {
   return {
     id: row.id,
     iso: row.iso,
@@ -162,7 +209,8 @@ function mapProject(row: ProjectRow, changes: ProjectChange[]): GridProject {
     rawSourceUrl: row.raw_source_url,
     firstSeenAt: toIsoString(row.first_seen_at) ?? "",
     lastUpdatedAt: toIsoString(row.last_updated_at) ?? "",
-    changes
+    changes,
+    events
   }
 }
 
@@ -178,13 +226,86 @@ function mapSubstation(row: SubstationRow): Substation {
   }
 }
 
+function mapQueueEvent(row: QueueEventRow): QueueEvent {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    iso: row.iso,
+    queueId: row.queue_id,
+    projectName: row.project_name,
+    sourceUrl: row.source_url,
+    sourceName: row.source_name,
+    eventType: row.event_type,
+    severity: row.severity,
+    title: row.title,
+    description: row.description,
+    fieldName: row.field_name,
+    oldValue: row.old_value,
+    newValue: row.new_value,
+    deltaMw: numberOrNull(row.delta_mw),
+    eventAt: toIsoString(row.event_at) ?? "",
+    createdAt: toIsoString(row.created_at) ?? ""
+  }
+}
+
+function mapSourceReport(row: SourceReportRow): SourceReportHealth {
+  return {
+    id: row.id,
+    iso: row.iso,
+    sourceUrl: row.source_url,
+    sourceName: row.source_name,
+    publishedAt: toIsoString(row.published_at),
+    reportDate: toDateString(row.report_date),
+    status: row.status,
+    errorMessage: row.error_message,
+    startedAt: toIsoString(row.started_at),
+    completedAt: toIsoString(row.completed_at)
+  }
+}
+
+async function getQueueEventRows(limit = 2000): Promise<QueueEventRow[]> {
+  const sql = getSql()
+  try {
+    const rows = await sql`
+      select
+        e.id,
+        e.project_id,
+        p.iso,
+        p.queue_id,
+        p.project_name,
+        r.source_url,
+        r.source_name,
+        e.event_type,
+        e.severity,
+        e.title,
+        e.description,
+        e.field_name,
+        e.old_value,
+        e.new_value,
+        e.delta_mw,
+        e.event_at,
+        e.created_at
+      from queue_events e
+      join projects p on p.id = e.project_id
+      left join source_reports r on r.id = e.source_report_id
+      where p.iso in ('ERCOT', 'CAISO')
+      order by e.event_at desc, e.created_at desc
+      limit ${limit}
+    `
+    return rows as QueueEventRow[]
+  } catch (error) {
+    if (isUndefinedRelationError(error)) return []
+    throw error
+  }
+}
+
 export async function getDashboardData(): Promise<DashboardData> {
   if (!process.env.DATABASE_URL) {
-    return { projects: [], substations: [], latestSnapshotAt: null }
+    return { projects: [], substations: [], recentEvents: [], latestSnapshotAt: null }
   }
 
   const sql = getSql()
-  const [projectRows, changeRows, substationRows, freshnessRows] = await Promise.all([
+  const [projectRows, changeRows, eventRows, substationRows, freshnessRows] = await Promise.all([
     sql`select * from projects where iso in ('ERCOT', 'CAISO') order by iso, queue_id limit 10000`,
     sql`
       select c.*
@@ -194,6 +315,7 @@ export async function getDashboardData(): Promise<DashboardData> {
       order by c.changed_at desc
       limit 2000
     `,
+    getQueueEventRows(2000),
     sql`select * from substations order by name nulls last limit 5000`,
     sql`select max(captured_at) as latest_snapshot_at from project_snapshots`
   ])
@@ -204,12 +326,20 @@ export async function getDashboardData(): Promise<DashboardData> {
     bucket.push(mapChange(row))
     changesByProject.set(row.project_id, bucket)
   }
+  const events = (eventRows as QueueEventRow[]).map(mapQueueEvent)
+  const eventsByProject = new Map<string, QueueEvent[]>()
+  for (const event of events) {
+    const bucket = eventsByProject.get(event.projectId) ?? []
+    bucket.push(event)
+    eventsByProject.set(event.projectId, bucket)
+  }
 
   return {
     projects: (projectRows as ProjectRow[]).map((row) =>
-      mapProject(row, changesByProject.get(row.id) ?? [])
+      mapProject(row, changesByProject.get(row.id) ?? [], eventsByProject.get(row.id) ?? [])
     ),
     substations: (substationRows as SubstationRow[]).map(mapSubstation),
+    recentEvents: events,
     latestSnapshotAt:
       toIsoString(
         (freshnessRows as Array<{ latest_snapshot_at: Date | string | null }>)[0]
@@ -239,10 +369,6 @@ function toMonthString(value: Date | string): string {
   return toIsoString(value)?.slice(0, 7) ?? String(value).slice(0, 7)
 }
 
-function toDateOnlyString(value: Date | string | null): string | null {
-  return toIsoString(value)?.slice(0, 10) ?? null
-}
-
 function coverageLabel(iso: string): string {
   if (iso === "ERCOT") {
     return "12+ months official ERCOT GIS reports"
@@ -257,6 +383,198 @@ function coverageSource(iso: string): IsoCoverage["source"] {
   return iso === "ERCOT" ? "official_archive" : "captured_snapshots"
 }
 
+export async function getAnalysisData(): Promise<AnalysisData> {
+  const generatedAt = new Date().toISOString()
+  if (!process.env.DATABASE_URL) {
+    return {
+      generatedAt,
+      coverage: [],
+      projectTrends: [],
+      changeTrends: [],
+      fuelMix: [],
+      recentChanges: []
+    }
+  }
+
+  const sql = getSql()
+
+  try {
+    const [coverageRows, projectTrendRows, changeTrendRows, fuelMixRows, recentRows] =
+      await Promise.all([
+        sql`
+          select
+            iso,
+            min(report_date) as first_report_date,
+            max(report_date) as latest_report_date,
+            count(*)::bigint as report_count
+          from source_reports
+          where iso in ('ERCOT', 'CAISO')
+            and status = 'success'
+            and report_date is not null
+          group by iso
+          order by iso
+        `,
+        sql`
+          select
+            date_trunc('month', s.snapshot_date)::date as month,
+            p.iso,
+            count(distinct p.id)::bigint as project_count
+          from project_snapshots s
+          join projects p on p.id = s.project_id
+          where p.iso in ('ERCOT', 'CAISO')
+            and s.snapshot_date >= current_date - interval '12 months'
+          group by month, p.iso
+          order by month, p.iso
+        `,
+        sql`
+          select
+            date_trunc('month', c.changed_at)::date as month,
+            p.iso,
+            count(*) filter (where c.field_name = 'project_name' and c.old_value is null)::bigint
+              as added_count,
+            count(*) filter (
+              where c.field_name in ('current_status', 'current_phase', 'withdrawn_date')
+                and lower(coalesce(c.new_value, '')) like '%withdraw%'
+            )::bigint as withdrawn_count,
+            count(*) filter (
+              where c.field_name in ('current_status', 'current_phase', 'energized_date')
+                and lower(coalesce(c.new_value, '')) like '%energ%'
+            )::bigint as energized_count
+          from project_status_changes c
+          join projects p on p.id = c.project_id
+          where p.iso in ('ERCOT', 'CAISO')
+            and c.changed_at >= current_date - interval '12 months'
+          group by month, p.iso
+          order by month desc, p.iso
+        `,
+        sql`
+          select
+            date_trunc('month', s.snapshot_date)::date as month,
+            p.iso,
+            coalesce(p.fuel_type, 'unknown') as fuel_type,
+            count(distinct p.id)::bigint as project_count
+          from project_snapshots s
+          join projects p on p.id = s.project_id
+          where p.iso in ('ERCOT', 'CAISO')
+            and s.snapshot_date >= current_date - interval '12 months'
+          group by month, p.iso, coalesce(p.fuel_type, 'unknown')
+          order by month, p.iso, project_count desc
+        `,
+        sql`
+          select
+            c.id,
+            p.iso,
+            p.queue_id,
+            p.project_name,
+            c.changed_at,
+            c.field_name,
+            c.old_value,
+            c.new_value
+          from project_status_changes c
+          join projects p on p.id = c.project_id
+          where p.iso in ('ERCOT', 'CAISO')
+          order by c.changed_at desc
+          limit 25
+        `
+      ])
+
+    return {
+      generatedAt,
+      coverage: (coverageRows as CoverageRow[]).map((row): IsoCoverage => ({
+        iso: row.iso,
+        label: coverageLabel(row.iso),
+        firstReportDate: toDateString(row.first_report_date),
+        latestReportDate: toDateString(row.latest_report_date),
+        reportCount: countValue(row.report_count),
+        source: coverageSource(row.iso)
+      })),
+      projectTrends: (projectTrendRows as MonthlyProjectTrendRow[]).map(
+        (row): MonthlyProjectTrend => ({
+          month: toMonthString(row.month),
+          iso: row.iso,
+          projectCount: countValue(row.project_count)
+        })
+      ),
+      changeTrends: (changeTrendRows as MonthlyChangeTrendRow[]).map(
+        (row): MonthlyChangeTrend => ({
+          month: toMonthString(row.month),
+          iso: row.iso,
+          addedCount: countValue(row.added_count),
+          withdrawnCount: countValue(row.withdrawn_count),
+          energizedCount: countValue(row.energized_count)
+        })
+      ),
+      fuelMix: (fuelMixRows as FuelMixTrendRow[]).map((row): FuelMixTrend => ({
+        month: toMonthString(row.month),
+        iso: row.iso,
+        fuelType: row.fuel_type ?? "unknown",
+        projectCount: countValue(row.project_count)
+      })),
+      recentChanges: (recentRows as RecentChangeRow[]).map(mapRecentChange)
+    }
+  } catch (error) {
+    if (isUndefinedRelationError(error)) {
+      return {
+        generatedAt,
+        coverage: [],
+        projectTrends: [],
+        changeTrends: [],
+        fuelMix: [],
+        recentChanges: []
+      }
+    }
+    throw error
+  }
+}
+
+async function getHealthEventRows(): Promise<{
+  latestSourceReports: SourceReportHealth[]
+  failedSourceReports: SourceReportHealth[]
+  eventSeverityCounts: HealthData["eventSeverityCounts"]
+}> {
+  const sql = getSql()
+  try {
+    const [latestRows, failedRows, severityRows] = await Promise.all([
+      sql`
+        select distinct on (iso)
+          id, iso, source_url, source_name, published_at, report_date, status,
+          error_message, started_at, completed_at
+        from source_reports
+        where iso in ('ERCOT', 'CAISO') and status = 'success'
+        order by iso, completed_at desc nulls last, created_at desc
+      `,
+      sql`
+        select id, iso, source_url, source_name, published_at, report_date, status,
+               error_message, started_at, completed_at
+        from source_reports
+        where iso in ('ERCOT', 'CAISO') and status = 'failed'
+        order by completed_at desc nulls last, updated_at desc
+        limit 20
+      `,
+      sql`
+        select severity, count(*)::bigint as count
+        from queue_events
+        where event_at >= now() - interval '7 days'
+        group by severity
+        order by count desc
+      `
+    ])
+    return {
+      latestSourceReports: (latestRows as SourceReportRow[]).map(mapSourceReport),
+      failedSourceReports: (failedRows as SourceReportRow[]).map(mapSourceReport),
+      eventSeverityCounts: (severityRows as EventSeverityRow[]).map((row) => ({
+        severity: row.severity,
+        count: countValue(row.count)
+      }))
+    }
+  } catch (error) {
+    if (isUndefinedRelationError(error)) {
+      return { latestSourceReports: [], failedSourceReports: [], eventSeverityCounts: [] }
+    }
+    throw error
+  }
+}
+
 export async function getHealthData(): Promise<HealthData> {
   const generatedAt = new Date().toISOString()
   if (!process.env.DATABASE_URL) {
@@ -265,12 +583,15 @@ export async function getHealthData(): Promise<HealthData> {
       isoHealth: [],
       phaseCounts: [],
       fuelCounts: [],
-      recentChanges: []
+      recentChanges: [],
+      latestSourceReports: [],
+      failedSourceReports: [],
+      eventSeverityCounts: []
     }
   }
 
   const sql = getSql()
-  const [isoRows, phaseRows, fuelRows, changeRows] = await Promise.all([
+  const [isoRows, phaseRows, fuelRows, changeRows, eventHealth] = await Promise.all([
     sql`
       select
         p.iso,
@@ -312,7 +633,8 @@ export async function getHealthData(): Promise<HealthData> {
       where p.iso in ('ERCOT', 'CAISO')
       order by c.changed_at desc
       limit 50
-    `
+    `,
+    getHealthEventRows()
   ])
 
   return {
@@ -333,163 +655,10 @@ export async function getHealthData(): Promise<HealthData> {
       label: row.label ?? "unknown",
       count: countValue(row.count)
     })),
-    recentChanges: (changeRows as RecentChangeRow[]).map(mapRecentChange)
-  }
-}
-
-async function hasIngestionReportsTable(): Promise<boolean> {
-  if (!process.env.DATABASE_URL) return false
-  const sql = getSql()
-  const rows = await sql`select to_regclass('public.ingestion_reports') as table_name`
-  return Boolean((rows as Array<{ table_name: string | null }>)[0]?.table_name)
-}
-
-export async function getAnalysisData(): Promise<AnalysisData> {
-  const generatedAt = new Date().toISOString()
-  if (!process.env.DATABASE_URL) {
-    return {
-      generatedAt,
-      coverage: [],
-      projectTrends: [],
-      changeTrends: [],
-      fuelMix: [],
-      recentChanges: []
-    }
-  }
-
-  const sql = getSql()
-  const hasReportMetadata = await hasIngestionReportsTable()
-  const coverageQuery = hasReportMetadata
-    ? sql`
-        select
-          iso,
-          min(report_date) as first_report_date,
-          max(report_date) as latest_report_date,
-          count(*) as report_count
-        from ingestion_reports
-        where iso in ('ERCOT', 'CAISO')
-        group by iso
-        order by iso
-      `
-    : sql`
-        select
-          p.iso,
-          min(s.snapshot_date) as first_report_date,
-          max(s.snapshot_date) as latest_report_date,
-          count(distinct s.snapshot_date) as report_count
-        from project_snapshots s
-        join projects p on p.id = s.project_id
-        where p.iso in ('ERCOT', 'CAISO')
-        group by p.iso
-        order by p.iso
-      `
-
-  const [coverageRows, projectTrendRows, changeTrendRows, fuelMixRows, changeRows] =
-    await Promise.all([
-      coverageQuery,
-      sql`
-        select
-          date_trunc('month', s.snapshot_date)::date as month,
-          p.iso,
-          count(distinct p.id) as project_count
-        from project_snapshots s
-        join projects p on p.id = s.project_id
-        where p.iso in ('ERCOT', 'CAISO')
-          and s.snapshot_date >= date_trunc('month', current_date) - interval '11 months'
-        group by date_trunc('month', s.snapshot_date)::date, p.iso
-        order by month, p.iso
-      `,
-      sql`
-        with first_seen as (
-          select project_id, min(snapshot_date) as first_snapshot_date
-          from project_snapshots
-          group by project_id
-        )
-        select
-          date_trunc('month', s.snapshot_date)::date as month,
-          p.iso,
-          count(distinct p.id) filter (where fs.first_snapshot_date = s.snapshot_date) as added_count,
-          count(distinct p.id) filter (
-            where lower(coalesce(s.current_phase, s.current_status, '')) like '%withdraw%'
-          ) as withdrawn_count,
-          count(distinct p.id) filter (
-            where lower(coalesce(s.current_phase, s.current_status, '')) like '%energ%'
-               or lower(coalesce(s.current_phase, s.current_status, '')) like '%complete%'
-          ) as energized_count
-        from project_snapshots s
-        join projects p on p.id = s.project_id
-        join first_seen fs on fs.project_id = p.id
-        where p.iso in ('ERCOT', 'CAISO')
-          and s.snapshot_date >= date_trunc('month', current_date) - interval '11 months'
-        group by date_trunc('month', s.snapshot_date)::date, p.iso
-        order by month, p.iso
-      `,
-      sql`
-        select
-          date_trunc('month', s.snapshot_date)::date as month,
-          p.iso,
-          coalesce(p.fuel_type, 'unknown') as fuel_type,
-          count(distinct p.id) as project_count
-        from project_snapshots s
-        join projects p on p.id = s.project_id
-        where p.iso in ('ERCOT', 'CAISO')
-          and s.snapshot_date >= date_trunc('month', current_date) - interval '11 months'
-        group by date_trunc('month', s.snapshot_date)::date, p.iso, coalesce(p.fuel_type, 'unknown')
-        order by month, p.iso, project_count desc
-      `,
-      sql`
-        select
-          c.id,
-          p.iso,
-          p.queue_id,
-          p.project_name,
-          c.changed_at,
-          c.field_name,
-          c.old_value,
-          c.new_value
-        from project_status_changes c
-        join projects p on p.id = c.project_id
-        where p.iso in ('ERCOT', 'CAISO')
-        order by c.changed_at desc
-        limit 25
-      `
-    ])
-
-  return {
-    generatedAt,
-    coverage: (coverageRows as CoverageRow[]).map((row): IsoCoverage => ({
-      iso: row.iso,
-      label: coverageLabel(row.iso),
-      firstReportDate: toDateOnlyString(row.first_report_date),
-      latestReportDate: toDateOnlyString(row.latest_report_date),
-      reportCount: countValue(row.report_count),
-      source: coverageSource(row.iso)
-    })),
-    projectTrends: (projectTrendRows as MonthlyProjectTrendRow[]).map(
-      (row): MonthlyProjectTrend => ({
-        month: toMonthString(row.month),
-        iso: row.iso,
-        projectCount: countValue(row.project_count)
-      })
-    ),
-    changeTrends: (changeTrendRows as MonthlyChangeTrendRow[]).map(
-      (row): MonthlyChangeTrend => ({
-        month: toMonthString(row.month),
-        iso: row.iso,
-        addedCount: countValue(row.added_count),
-        withdrawnCount: countValue(row.withdrawn_count),
-        energizedCount: countValue(row.energized_count)
-      })
-    ),
-    fuelMix: (fuelMixRows as FuelMixTrendRow[]).map(
-      (row): FuelMixTrend => ({
-        month: toMonthString(row.month),
-        iso: row.iso,
-        fuelType: row.fuel_type ?? "unknown",
-        projectCount: countValue(row.project_count)
-      })
-    ),
-    recentChanges: (changeRows as RecentChangeRow[]).map(mapRecentChange)
+    recentChanges: (changeRows as RecentChangeRow[]).map(mapRecentChange),
+    latestSourceReports: eventHealth.latestSourceReports,
+    failedSourceReports: eventHealth.failedSourceReports,
+    eventSeverityCounts: eventHealth.eventSeverityCounts
   }
 }
 

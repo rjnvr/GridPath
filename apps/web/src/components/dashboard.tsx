@@ -1,6 +1,12 @@
 "use client"
 
-import type { DashboardData, GridProject, Substation } from "@gridpath/shared"
+import type {
+  DashboardData,
+  GridProject,
+  QueueEvent,
+  QueueEventSeverity,
+  Substation
+} from "@gridpath/shared"
 import {
   type ColumnDef,
   flexRender,
@@ -21,6 +27,7 @@ import {
   ChevronsRight,
   Database,
   Filter,
+  ListChecks,
   Maximize2,
   Minimize2,
   Search,
@@ -28,7 +35,7 @@ import {
 } from "lucide-react"
 import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from "maplibre-gl"
 import { useSearchParams } from "next/navigation"
-import { useEffect, useMemo, useRef, useState, useTransition } from "react"
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { toast } from "sonner"
 
 import { createWatchlistClientAction } from "@/app/(app)/watchlists/actions"
@@ -81,7 +88,15 @@ type FilterState = {
   ownerCompany: string
 }
 
+type EventFilterState = {
+  iso: string
+  severity: string
+  eventType: string
+  timeWindow: string
+}
+
 type MapSize = "compact" | "balanced" | "expanded"
+type PanelMode = "projects" | "events"
 
 const columns: ColumnDef<GridProject>[] = [
   {
@@ -120,6 +135,36 @@ const columns: ColumnDef<GridProject>[] = [
     cell: ({ row }) => row.original.filedDate ?? "—"
   }
 ]
+
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  new_project: "New project",
+  phase_advanced: "Phase advanced",
+  phase_regressed: "Phase regressed",
+  ia_executed: "IA executed",
+  energized: "Energized",
+  withdrawn: "Withdrawn",
+  mw_increase: "MW increase",
+  mw_decrease: "MW decrease",
+  owner_changed: "Owner changed",
+  milestone_date_changed: "Milestone date",
+  status_changed: "Status changed",
+  project_field_changed: "Field changed"
+}
+
+const SEVERITY_STYLES: Record<QueueEventSeverity | string, string> = {
+  critical: "border-red-500/50 bg-red-500/15 text-red-200",
+  important: "border-amber-500/50 bg-amber-500/15 text-amber-100",
+  watch: "border-sky-500/45 bg-sky-500/15 text-sky-100",
+  info: "border-border bg-background text-muted-foreground"
+}
+
+function eventTypeLabel(value: string): string {
+  return EVENT_TYPE_LABELS[value] ?? value.replaceAll("_", " ")
+}
+
+function severityClass(value: QueueEventSeverity | string): string {
+  return SEVERITY_STYLES[value] ?? SEVERITY_STYLES.info
+}
 
 function freshnessText(latestSnapshotAt: string | null): string {
   if (!latestSnapshotAt) {
@@ -245,6 +290,43 @@ function projectMatchesSearch(project: GridProject, query: string): boolean {
   return haystack.includes(query)
 }
 
+function eventMatchesSearch(event: QueueEvent, query: string): boolean {
+  if (!query) {
+    return true
+  }
+  const haystack = [
+    event.iso,
+    event.queueId,
+    event.projectName,
+    event.title,
+    event.description,
+    event.eventType,
+    event.severity,
+    event.fieldName,
+    event.oldValue,
+    event.newValue,
+    event.sourceName
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+  return haystack.includes(query)
+}
+
+function eventWithinWindow(event: QueueEvent, timeWindow: string): boolean {
+  if (timeWindow === "all") {
+    return true
+  }
+  const elapsed = Date.now() - new Date(event.eventAt).getTime()
+  if (timeWindow === "24h") {
+    return elapsed <= 24 * 60 * 60 * 1000
+  }
+  if (timeWindow === "7d") {
+    return elapsed <= 7 * 24 * 60 * 60 * 1000
+  }
+  return elapsed <= 30 * 24 * 60 * 60 * 1000
+}
+
 function gridRowsForMapSize(size: MapSize): string {
   if (size === "compact") return "minmax(220px, 32%) 1fr"
   if (size === "expanded") return "minmax(460px, 72%) 1fr"
@@ -262,11 +344,28 @@ function hasActiveFilters(filters: FilterState, searchQuery: string): boolean {
   )
 }
 
+function hasActiveEventFilters(filters: EventFilterState, searchQuery: string): boolean {
+  return (
+    searchQuery.length > 0 ||
+    filters.iso !== "all" ||
+    filters.severity !== "all" ||
+    filters.eventType !== "all" ||
+    filters.timeWindow !== "30d"
+  )
+}
+
 export function Dashboard({ initialData }: { initialData: DashboardData }) {
   const searchParams = useSearchParams()
   const [filters, setFilters] = useState<FilterState>(() =>
     filterFromSearchParams(new URLSearchParams(searchParams?.toString() ?? ""))
   )
+  const [panelMode, setPanelMode] = useState<PanelMode>("projects")
+  const [eventFilters, setEventFilters] = useState<EventFilterState>({
+    iso: "all",
+    severity: "all",
+    eventType: "all",
+    timeWindow: "30d"
+  })
   const [searchQuery, setSearchQuery] = useState("")
   const [mapSize, setMapSize] = useState<MapSize>("balanced")
   const [sorting, setSorting] = useState<SortingState>([])
@@ -315,6 +414,10 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
       ].sort(),
     [filters.iso, initialData.projects]
   )
+  const eventTypes = useMemo(
+    () => [...new Set(initialData.recentEvents.map((event) => event.eventType))].sort(),
+    [initialData.recentEvents]
+  )
 
   const filteredProjects = useMemo(
     () => {
@@ -338,6 +441,23 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     },
     [filters, initialData.projects, searchQuery]
   )
+  const filteredEvents = useMemo(() => {
+    const normalizedSearch = searchQuery.trim().toLowerCase()
+    return initialData.recentEvents.filter((event) => {
+      const isoMatch = eventFilters.iso === "all" || event.iso === eventFilters.iso
+      const severityMatch =
+        eventFilters.severity === "all" || event.severity === eventFilters.severity
+      const typeMatch =
+        eventFilters.eventType === "all" || event.eventType === eventFilters.eventType
+      return (
+        isoMatch &&
+        severityMatch &&
+        typeMatch &&
+        eventWithinWindow(event, eventFilters.timeWindow) &&
+        eventMatchesSearch(event, normalizedSearch)
+      )
+    })
+  }, [eventFilters, initialData.recentEvents, searchQuery])
   const filteredProjectsRef = useRef<GridProject[]>(filteredProjects)
 
   useEffect(() => {
@@ -357,7 +477,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
 
   useEffect(() => {
     setPagination((current) => ({ ...current, pageIndex: 0 }))
-  }, [filters, searchQuery])
+  }, [filters, eventFilters, panelMode, searchQuery])
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
@@ -499,6 +619,17 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
   function clearFilters() {
     setSearchQuery("")
     setFilters({ iso: "all", fuelType: "all", phase: "all", mwBucket: "all", ownerCompany: "" })
+    setEventFilters({ iso: "all", severity: "all", eventType: "all", timeWindow: "30d" })
+  }
+
+  function handleProjectRowKeyDown(
+    event: KeyboardEvent<HTMLTableRowElement>,
+    project: GridProject
+  ) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault()
+      setSelectedProject(project)
+    }
   }
 
   return (
@@ -561,96 +692,190 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         <div className="flex min-h-0 flex-col overflow-hidden bg-panel">
           <div className="shrink-0 border-b border-border px-4 py-3">
             <div className="flex flex-wrap items-center gap-3">
+              <div className="inline-flex rounded-md border border-border bg-background p-1">
+                <Button
+                  type="button"
+                  variant={panelMode === "projects" ? "secondary" : "ghost"}
+                  size="sm"
+                  onClick={() => setPanelMode("projects")}
+                >
+                  <Database className="h-4 w-4" />
+                  Projects
+                </Button>
+                <Button
+                  type="button"
+                  variant={panelMode === "events" ? "secondary" : "ghost"}
+                  size="sm"
+                  onClick={() => setPanelMode("events")}
+                >
+                  <ListChecks className="h-4 w-4" />
+                  Events
+                </Button>
+              </div>
               <div className="relative min-w-[240px] flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Search project, queue ID, owner, county, status"
+                  placeholder={
+                    panelMode === "events"
+                      ? "Search event, project, queue ID, source"
+                      : "Search project, queue ID, owner, county, status"
+                  }
                   className="pl-9"
                 />
               </div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Filter size={16} />
-                <span>{filteredProjects.length.toLocaleString()} results</span>
+                <span>
+                  {(panelMode === "events" ? filteredEvents.length : filteredProjects.length).toLocaleString()}{" "}
+                  results
+                </span>
               </div>
               <div className="ml-auto flex items-center gap-2">
-                {hasActiveFilters(filters, searchQuery.trim()) ? (
+                {(panelMode === "events"
+                  ? hasActiveEventFilters(eventFilters, searchQuery.trim())
+                  : hasActiveFilters(filters, searchQuery.trim())) ? (
                   <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
                     Clear
                   </Button>
                 ) : null}
-                <SaveViewDialog filters={filters} />
+                {panelMode === "projects" ? <SaveViewDialog filters={filters} /> : null}
               </div>
             </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-              <select
-                value={filters.iso}
-                onChange={(event) =>
-                  setFilters((current) => ({
-                    ...current,
-                    iso: event.target.value,
-                    fuelType: "all",
-                    phase: "all",
-                    ownerCompany: ""
-                  }))
-                }
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="all">All ISOs</option>
-                <option value="ERCOT">ERCOT</option>
-                <option value="CAISO">CAISO</option>
-              </select>
-              <select
-                value={filters.fuelType}
-                onChange={(event) => setFilters((current) => ({ ...current, fuelType: event.target.value }))}
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="all">All fuels</option>
-                {fuelTypes.map((fuel) => (
-                  <option key={fuel} value={fuel ?? ""}>
-                    {fuel}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={filters.mwBucket}
-                onChange={(event) => setFilters((current) => ({ ...current, mwBucket: event.target.value }))}
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="all">All MW</option>
-                <option value="lt100">&lt; 100 MW</option>
-                <option value="100to500">100-499 MW</option>
-                <option value="gte500">500+ MW</option>
-              </select>
-              <select
-                value={filters.phase}
-                onChange={(event) => setFilters((current) => ({ ...current, phase: event.target.value }))}
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="all">All phases</option>
-                {phases.map((phase) => (
-                  <option key={phase} value={phase ?? ""}>
-                    {phase}
-                  </option>
-                ))}
-              </select>
-              <input
-                list="owner-companies"
-                value={filters.ownerCompany}
-                onChange={(event) => setFilters((current) => ({ ...current, ownerCompany: event.target.value }))}
-                placeholder="Owner contains"
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-              />
-              <datalist id="owner-companies">
-                {ownerCompanies.slice(0, 200).map((owner) => (
-                  <option key={owner} value={owner ?? ""} />
-                ))}
-              </datalist>
-            </div>
+            {panelMode === "projects" ? (
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                <select
+                  value={filters.iso}
+                  onChange={(event) =>
+                    setFilters((current) => ({
+                      ...current,
+                      iso: event.target.value,
+                      fuelType: "all",
+                      phase: "all",
+                      ownerCompany: ""
+                    }))
+                  }
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="all">All ISOs</option>
+                  <option value="ERCOT">ERCOT</option>
+                  <option value="CAISO">CAISO</option>
+                </select>
+                <select
+                  value={filters.fuelType}
+                  onChange={(event) =>
+                    setFilters((current) => ({ ...current, fuelType: event.target.value }))
+                  }
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="all">All fuels</option>
+                  {fuelTypes.map((fuel) => (
+                    <option key={fuel} value={fuel ?? ""}>
+                      {fuel}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={filters.mwBucket}
+                  onChange={(event) =>
+                    setFilters((current) => ({ ...current, mwBucket: event.target.value }))
+                  }
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="all">All MW</option>
+                  <option value="lt100">&lt; 100 MW</option>
+                  <option value="100to500">100-499 MW</option>
+                  <option value="gte500">500+ MW</option>
+                </select>
+                <select
+                  value={filters.phase}
+                  onChange={(event) =>
+                    setFilters((current) => ({ ...current, phase: event.target.value }))
+                  }
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="all">All phases</option>
+                  {phases.map((phase) => (
+                    <option key={phase} value={phase ?? ""}>
+                      {phase}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  list="owner-companies"
+                  value={filters.ownerCompany}
+                  onChange={(event) =>
+                    setFilters((current) => ({ ...current, ownerCompany: event.target.value }))
+                  }
+                  placeholder="Owner contains"
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                />
+                <datalist id="owner-companies">
+                  {ownerCompanies.slice(0, 200).map((owner) => (
+                    <option key={owner} value={owner ?? ""} />
+                  ))}
+                </datalist>
+              </div>
+            ) : (
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                <select
+                  value={eventFilters.iso}
+                  onChange={(event) =>
+                    setEventFilters((current) => ({ ...current, iso: event.target.value }))
+                  }
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="all">All ISOs</option>
+                  <option value="ERCOT">ERCOT</option>
+                  <option value="CAISO">CAISO</option>
+                </select>
+                <select
+                  value={eventFilters.severity}
+                  onChange={(event) =>
+                    setEventFilters((current) => ({ ...current, severity: event.target.value }))
+                  }
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="all">All severities</option>
+                  <option value="critical">Critical</option>
+                  <option value="important">Important</option>
+                  <option value="watch">Watch</option>
+                  <option value="info">Info</option>
+                </select>
+                <select
+                  value={eventFilters.eventType}
+                  onChange={(event) =>
+                    setEventFilters((current) => ({ ...current, eventType: event.target.value }))
+                  }
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="all">All event types</option>
+                  {eventTypes.map((eventType) => (
+                    <option key={eventType} value={eventType}>
+                      {eventTypeLabel(eventType)}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={eventFilters.timeWindow}
+                  onChange={(event) =>
+                    setEventFilters((current) => ({ ...current, timeWindow: event.target.value }))
+                  }
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="24h">Last 24 hours</option>
+                  <option value="7d">Last 7 days</option>
+                  <option value="30d">Last 30 days</option>
+                  <option value="all">All loaded events</option>
+                </select>
+              </div>
+            )}
           </div>
 
-          <div className="min-h-0 flex-1 overflow-auto">
+          {panelMode === "projects" ? (
+            <>
+              <div className="min-h-0 flex-1 overflow-auto">
             <table className="w-full border-collapse text-left text-sm">
               <thead className="sticky top-0 bg-panel text-xs uppercase text-muted-foreground">
                 {table.getHeaderGroups().map((headerGroup) => (
@@ -682,6 +907,9 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                   <tr
                     key={row.id}
                     onClick={() => setSelectedProject(row.original)}
+                    onKeyDown={(event) => handleProjectRowKeyDown(event, row.original)}
+                    role="button"
+                    tabIndex={0}
                     className="cursor-pointer border-b border-border/70 hover:bg-white/5"
                   >
                     {row.getVisibleCells().map((cell) => (
@@ -700,8 +928,8 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                 ) : null}
               </tbody>
             </table>
-          </div>
-          <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border px-4 py-3 text-sm text-muted-foreground">
+              </div>
+              <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border px-4 py-3 text-sm text-muted-foreground">
             <span>
               Page {table.getState().pagination.pageIndex + 1} of {Math.max(table.getPageCount(), 1)}
             </span>
@@ -731,7 +959,15 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                 <ChevronsRight className="h-4 w-4" />
               </Button>
             </div>
-          </div>
+              </div>
+            </>
+          ) : (
+            <EventTable
+              events={filteredEvents}
+              projectsById={projectsById}
+              onSelectProject={setSelectedProject}
+            />
+          )}
         </div>
       </section>
 
@@ -739,6 +975,96 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         <ProjectDrawer project={selectedProject} onClose={() => setSelectedProject(null)} />
       ) : null}
     </main>
+  )
+}
+
+function EventTable({
+  events,
+  projectsById,
+  onSelectProject
+}: {
+  events: QueueEvent[]
+  projectsById: Map<string, GridProject>
+  onSelectProject: (project: GridProject | null) => void
+}) {
+  function selectEventProject(event: QueueEvent) {
+    onSelectProject(projectsById.get(event.projectId) ?? null)
+  }
+
+  function handleEventRowKeyDown(
+    keyboardEvent: KeyboardEvent<HTMLTableRowElement>,
+    queueEvent: QueueEvent
+  ) {
+    if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
+      keyboardEvent.preventDefault()
+      selectEventProject(queueEvent)
+    }
+  }
+
+  return (
+    <div className="min-h-0 flex-1 overflow-auto">
+      <table className="w-full border-collapse text-left text-sm">
+        <thead className="sticky top-0 bg-panel text-xs uppercase text-muted-foreground">
+          <tr>
+            <th className="border-b border-border px-4 py-3">Time</th>
+            <th className="border-b border-border px-4 py-3">Severity</th>
+            <th className="border-b border-border px-4 py-3">Event</th>
+            <th className="border-b border-border px-4 py-3">Project</th>
+            <th className="border-b border-border px-4 py-3">Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          {events.length === 0 ? (
+            <tr>
+              <td colSpan={5} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                No queue events match these filters.
+              </td>
+            </tr>
+          ) : (
+            events.map((event) => (
+              <tr
+                key={event.id}
+                onClick={() => selectEventProject(event)}
+                onKeyDown={(keyboardEvent) => handleEventRowKeyDown(keyboardEvent, event)}
+                role="button"
+                tabIndex={0}
+                className="cursor-pointer border-b border-border/70 hover:bg-white/5"
+              >
+                <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-muted-foreground">
+                  {new Date(event.eventAt).toLocaleString()}
+                </td>
+                <td className="px-4 py-3">
+                  <span
+                    className={`inline-flex rounded border px-2 py-1 text-xs capitalize ${severityClass(
+                      event.severity
+                    )}`}
+                  >
+                    {event.severity}
+                  </span>
+                </td>
+                <td className="max-w-xl px-4 py-3">
+                  <p className="font-medium">{event.title}</p>
+                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                    {event.description}
+                  </p>
+                  <p className="mt-1 font-mono text-[11px] uppercase text-muted-foreground">
+                    {eventTypeLabel(event.eventType)}
+                  </p>
+                </td>
+                <td className="px-4 py-3">
+                  <span className="font-mono text-xs text-muted-foreground">{event.queueId}</span>
+                  <br />
+                  {event.projectName ?? "Unnamed project"}
+                </td>
+                <td className="max-w-[220px] truncate px-4 py-3 text-xs text-muted-foreground">
+                  {event.sourceName ?? event.sourceUrl ?? "—"}
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -759,7 +1085,7 @@ function ProjectDrawer({ project, onClose }: { project: GridProject; onClose: ()
   ]
 
   return (
-    <aside className="fixed right-0 top-0 z-20 h-screen w-[420px] border-l border-border bg-panel shadow-2xl">
+    <aside className="fixed right-0 top-0 z-20 h-screen w-[460px] border-l border-border bg-panel shadow-2xl">
       <div className="flex items-start justify-between border-b border-border p-5">
         <div>
           <p className="font-mono text-xs text-muted-foreground">{project.queueId}</p>
@@ -770,6 +1096,55 @@ function ProjectDrawer({ project, onClose }: { project: GridProject; onClose: ()
         </button>
       </div>
       <div className="space-y-6 overflow-y-auto p-5">
+        <section>
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <ListChecks size={16} />
+            Intelligence timeline
+          </h3>
+          {project.events.length === 0 ? (
+            <p className="rounded border border-border bg-background p-3 text-sm text-muted-foreground">
+              No classified queue events yet.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {project.events.map((event) => (
+                <div key={event.id} className="rounded border border-border bg-background p-3 text-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <span
+                        className={`inline-flex rounded border px-2 py-0.5 text-xs capitalize ${severityClass(
+                          event.severity
+                        )}`}
+                      >
+                        {event.severity}
+                      </span>
+                      <h4 className="mt-2 font-medium">{event.title}</h4>
+                    </div>
+                    <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                      {new Date(event.eventAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-muted-foreground">{event.description}</p>
+                  {event.oldValue !== null || event.newValue !== null ? (
+                    <p className="mt-2 font-mono text-xs text-muted-foreground">
+                      {event.oldValue ?? "—"} → {event.newValue ?? "—"}
+                    </p>
+                  ) : null}
+                  {event.sourceUrl ? (
+                    <a
+                      href={event.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 inline-block text-xs text-primary underline-offset-4 hover:underline"
+                    >
+                      {event.sourceName ?? "Source report"}
+                    </a>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
         <section>
           <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
             <Database size={16} />
@@ -785,7 +1160,7 @@ function ProjectDrawer({ project, onClose }: { project: GridProject; onClose: ()
           </dl>
         </section>
         <section>
-          <h3 className="mb-3 text-sm font-medium text-muted-foreground">Change history</h3>
+          <h3 className="mb-3 text-sm font-medium text-muted-foreground">Raw field changes</h3>
           {project.changes.length === 0 ? (
             <p className="rounded border border-border bg-background p-3 text-sm text-muted-foreground">
               No tracked changes yet.

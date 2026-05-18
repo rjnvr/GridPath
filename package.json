@@ -13,7 +13,7 @@
     "typecheck": "npm --workspace apps/web run typecheck",
     "test:py": "cd apps/ingestion && python -m pytest",
     "lint:py": "cd apps/ingestion && python -m ruff check src tests",
-    "migrate": "for file in db/migrations/*.sql; do psql \"$DIRECT_DATABASE_URL\" -f \"$file\"; done"
+    "migrate": "if [ -z \"$DIRECT_DATABASE_URL\" ]; then echo 'Set DIRECT_DATABASE_URL to your Neon/Postgres direct connection string.' >&2; exit 1; fi; for f in db/migrations/*.sql; do psql \"$DIRECT_DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"$f\" || exit 1; done"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

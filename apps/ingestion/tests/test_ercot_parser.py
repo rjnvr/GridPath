@@ -5,8 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from gridpath_ingestion.discovery import DiscoveredReport
-from gridpath_ingestion.ercot import assert_expected_columns, main, parse_workbook
+from gridpath_ingestion.ercot import assert_expected_columns, parse_workbook
 
 
 def write_workbook(path: Path, rows: list[dict[str, object]]) -> None:
@@ -76,41 +75,33 @@ def test_parser_skips_rows_without_queue_id(tmp_path: Path) -> None:
     assert parse_workbook(workbook) == []
 
 
-def test_backfill_uses_historical_snapshots_without_updating_current(monkeypatch) -> None:
-    calls = []
+def test_parser_accepts_legacy_project_details_sheet(tmp_path: Path) -> None:
+    workbook = tmp_path / "ercot-legacy.xlsx"
+    with pd.ExcelWriter(workbook) as writer:
+        pd.DataFrame({"Notes": ["ignore"] * 23}).to_excel(
+            writer,
+            sheet_name="Project Details",
+            index=False,
+            header=False,
+        )
+        pd.DataFrame(
+            [
+                {
+                    "INR": "19INR001",
+                    "Project Name": "Legacy Wind",
+                    "Fuel": "Wind",
+                    "County": "Nueces",
+                    "Capacity (MW)": "226",
+                    "GINR Study Phase": "FIS",
+                    "IA Signed": "2019-04-01",
+                    "Interconnecting Entity": "Legacy Energy",
+                }
+            ],
+        ).to_excel(writer, sheet_name="Project Details", index=False, startrow=23)
 
-    monkeypatch.setattr(
-        "gridpath_ingestion.ercot.discover_ercot_gis_reports",
-        lambda limit: [
-            DiscoveredReport(
-                url="https://example.test/april.xlsx",
-                name="GIS_Report_April2026",
-                published_at="2026-05-01T13:53:52-05:00",
-            ),
-            DiscoveredReport(
-                url="https://example.test/march.xlsx",
-                name="GIS_Report_March2026",
-                published_at="2026-04-02T15:47:02-05:00",
-            ),
-        ][:limit],
-    )
-    monkeypatch.setattr(
-        "gridpath_ingestion.ercot.download_report",
-        lambda url: Path("/tmp/report.xlsx"),
-    )
-    monkeypatch.setattr("gridpath_ingestion.ercot.parse_workbook", lambda path, source_url=None: [])
+    projects = parse_workbook(workbook)
 
-    def fake_upsert(projects, database_url, **kwargs):
-        calls.append(kwargs)
-        return {"snapshots_written": 0}
-
-    monkeypatch.setattr("gridpath_ingestion.ercot.upsert_projects", fake_upsert)
-    monkeypatch.setenv("DIRECT_DATABASE_URL", "postgresql://example")
-
-    assert main(["--backfill-months", "2"]) == 0
-
-    assert [call["report_name"] for call in calls] == [
-        "GIS_Report_March2026",
-        "GIS_Report_April2026",
-    ]
-    assert all(call["update_current"] is False for call in calls)
+    assert len(projects) == 1
+    assert projects[0].queue_id == "19INR001"
+    assert projects[0].current_phase == "System Impact"
+    assert projects[0].ia_signed_date is not None
