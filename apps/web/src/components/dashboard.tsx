@@ -9,9 +9,25 @@ import {
   type SortingState,
   useReactTable
 } from "@tanstack/react-table"
-import { Activity, Database, Filter, MapPin, X } from "lucide-react"
+import { Activity, Bookmark, Database, Filter, MapPin, X } from "lucide-react"
 import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from "maplibre-gl"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useSearchParams } from "next/navigation"
+import { useEffect, useMemo, useRef, useState, useTransition } from "react"
+import { toast } from "sonner"
+
+import { createWatchlistAction } from "@/app/(app)/watchlists/actions"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 
 const fuelColors: Record<string, string> = {
   solar: "#facc15",
@@ -165,13 +181,24 @@ function projectPopupHtml(project: ProjectFeatureCollection["features"][number][
   return `<strong>${project.projectName}</strong><br/>${project.mwRequested ?? "—"} MW · ${project.currentPhase}<br/>Filed ${project.filedDate ?? "—"}`
 }
 
+const VALID_MW_BUCKETS = new Set(["lt100", "100to500", "gte500"])
+
+function filterFromSearchParams(params: URLSearchParams): FilterState {
+  const iso = params.get("iso")
+  const mw = params.get("mw")
+  return {
+    iso: iso === "ERCOT" || iso === "CAISO" ? iso : "all",
+    fuelType: params.get("fuel") ?? "all",
+    phase: params.get("phase") ?? "all",
+    mwBucket: mw && VALID_MW_BUCKETS.has(mw) ? mw : "all"
+  }
+}
+
 export function Dashboard({ initialData }: { initialData: DashboardData }) {
-  const [filters, setFilters] = useState<FilterState>({
-    iso: "all",
-    fuelType: "all",
-    phase: "all",
-    mwBucket: "all"
-  })
+  const searchParams = useSearchParams()
+  const [filters, setFilters] = useState<FilterState>(() =>
+    filterFromSearchParams(new URLSearchParams(searchParams?.toString() ?? ""))
+  )
   const [sorting, setSorting] = useState<SortingState>([])
   const [selectedProject, setSelectedProject] = useState<GridProject | null>(null)
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
@@ -443,6 +470,9 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                 </option>
               ))}
             </select>
+            <div className="ml-auto">
+              <SaveViewDialog filters={filters} />
+            </div>
           </div>
 
           <div className="h-full overflow-auto">
@@ -557,5 +587,82 @@ function ProjectDrawer({ project, onClose }: { project: GridProject; onClose: ()
         </section>
       </div>
     </aside>
+  )
+}
+
+function filterSummary(filters: FilterState): string {
+  const parts = [filters.iso === "all" ? "All ISOs" : filters.iso]
+  if (filters.fuelType !== "all") parts.push(filters.fuelType)
+  if (filters.phase !== "all") parts.push(filters.phase)
+  if (filters.mwBucket === "lt100") parts.push("< 100 MW")
+  else if (filters.mwBucket === "100to500") parts.push("100–499 MW")
+  else if (filters.mwBucket === "gte500") parts.push("500+ MW")
+  return parts.join(" · ")
+}
+
+function SaveViewDialog({ filters }: { filters: FilterState }) {
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState("")
+  const [pending, startTransition] = useTransition()
+
+  function handleSubmit(formData: FormData) {
+    const submittedName = String(formData.get("name") ?? "").trim()
+    if (!submittedName) return
+    startTransition(async () => {
+      try {
+        await createWatchlistAction(formData)
+        toast.success(`Saved "${submittedName}" to your watchlists`)
+        setName("")
+        setOpen(false)
+      } catch {
+        toast.error("Could not save watchlist. Try again.")
+      }
+    })
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Bookmark className="h-4 w-4" />
+          Save view
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Save this view</DialogTitle>
+          <DialogDescription>
+            Pin the current filters so you can come back to them — and (soon) get emailed when matching
+            projects change.
+          </DialogDescription>
+        </DialogHeader>
+        <form action={handleSubmit} className="space-y-4">
+          <div>
+            <Label htmlFor="watchlist-name">Name</Label>
+            <Input
+              id="watchlist-name"
+              name="name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="West Texas solar 500MW+"
+              required
+              autoFocus
+            />
+          </div>
+          <div className="rounded-md border border-border bg-background p-3 text-sm text-muted-foreground">
+            {filterSummary(filters)}
+          </div>
+          <input type="hidden" name="iso" value={filters.iso === "all" ? "" : filters.iso} />
+          <input type="hidden" name="fuelType" value={filters.fuelType === "all" ? "" : filters.fuelType} />
+          <input type="hidden" name="phase" value={filters.phase === "all" ? "" : filters.phase} />
+          <input type="hidden" name="mwBucket" value={filters.mwBucket === "all" ? "" : filters.mwBucket} />
+          <DialogFooter>
+            <Button type="submit" disabled={pending}>
+              {pending ? "Saving…" : "Save watchlist"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
