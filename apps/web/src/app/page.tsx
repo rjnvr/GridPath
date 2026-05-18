@@ -1,4 +1,5 @@
 import { Hero } from "@/components/marketing/hero"
+import { InterconnectFlow } from "@/components/marketing/interconnect-flow"
 import { LandingCTA } from "@/components/marketing/landing-cta"
 import { LiveStats } from "@/components/marketing/live-stats"
 import { Manifesto } from "@/components/marketing/manifesto"
@@ -24,6 +25,7 @@ export default async function HomePage() {
           changesLast7d={stats.changesLast7d}
           isoCount={stats.isoBreakdown.length}
         />
+        <InterconnectFlow />
         <Manifesto />
         <RecentActivity changes={stats.recentChanges} />
         <Workflow />
