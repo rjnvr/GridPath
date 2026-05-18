@@ -216,11 +216,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     source_url = os.environ.get("CAISO_QUEUE_URL")
+    report_name = "CAISO Public Queue Report"
+    snapshot_date = date.today()
     workbook = args.file
     if not workbook:
         if not source_url:
             report = discover_latest_caiso_public_queue_report()
             source_url = report.url
+            report_name = report.name
             print(
                 json.dumps(
                     {
@@ -241,7 +244,14 @@ def main(argv: list[str] | None = None) -> int:
     database_url = os.environ.get("DIRECT_DATABASE_URL") or os.environ.get("DATABASE_URL")
     if not database_url:
         raise SystemExit("Set DIRECT_DATABASE_URL or DATABASE_URL.")
-    stats = upsert_projects(projects, database_url)
+    stats = upsert_projects(
+        projects,
+        database_url,
+        snapshot_date=snapshot_date,
+        report_name=report_name,
+        source_url=source_url,
+        update_current=True,
+    )
     print(json.dumps(stats, sort_keys=True))
     return 0
 

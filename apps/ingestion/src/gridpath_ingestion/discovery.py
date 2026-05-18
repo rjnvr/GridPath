@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from urllib.parse import urljoin
 
 import httpx
@@ -19,35 +20,48 @@ class DiscoveredReport:
     published_at: str | None = None
 
 
-def discover_latest_ercot_gis_report() -> DiscoveredReport:
-    response = httpx.get(
-        ERCOT_DOC_LIST_URL,
-        params={"reportTypeId": ERCOT_GIS_REPORT_TYPE_ID},
-        timeout=60.0,
-    )
-    response.raise_for_status()
-    payload = response.json()
+def ercot_gis_reports_from_payload(payload: dict) -> list[DiscoveredReport]:
     documents = payload["ListDocsByRptTypeRes"]["DocumentList"]
 
-    candidates = []
+    reports: list[DiscoveredReport] = []
     for item in documents:
         document = item["Document"]
         friendly_name = str(document.get("FriendlyName", ""))
         extension = str(document.get("Extension", "")).lower()
         if not friendly_name.startswith("GIS_Report_") or extension != "xlsx":
             continue
-        candidates.append(document)
+        doc_id = document["DocID"]
+        reports.append(
+            DiscoveredReport(
+                url=f"{ERCOT_DOWNLOAD_URL}?doclookupId={doc_id}",
+                name=friendly_name,
+                published_at=document.get("PublishDate"),
+            )
+        )
+    return sorted(reports, key=lambda report: report.published_at or "", reverse=True)
 
-    if not candidates:
-        raise RuntimeError("Could not discover latest ERCOT GIS xlsx report.")
 
-    latest = max(candidates, key=lambda document: str(document.get("PublishDate", "")))
-    doc_id = latest["DocID"]
-    return DiscoveredReport(
-        url=f"{ERCOT_DOWNLOAD_URL}?doclookupId={doc_id}",
-        name=str(latest.get("FriendlyName", "GIS Report")),
-        published_at=latest.get("PublishDate"),
+def discover_ercot_gis_reports(limit: int | None = None) -> list[DiscoveredReport]:
+    response = httpx.get(
+        ERCOT_DOC_LIST_URL,
+        params={"reportTypeId": ERCOT_GIS_REPORT_TYPE_ID},
+        timeout=60.0,
     )
+    response.raise_for_status()
+    reports = ercot_gis_reports_from_payload(response.json())
+    if not reports:
+        raise RuntimeError("Could not discover latest ERCOT GIS xlsx report.")
+    return reports[:limit] if limit else reports
+
+
+def report_date(report: DiscoveredReport) -> datetime:
+    if report.published_at:
+        return datetime.fromisoformat(report.published_at.replace("Z", "+00:00"))
+    return datetime.utcnow()
+
+
+def discover_latest_ercot_gis_report() -> DiscoveredReport:
+    return discover_ercot_gis_reports(limit=1)[0]
 
 
 def discover_latest_caiso_public_queue_report(

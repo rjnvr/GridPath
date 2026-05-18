@@ -13,7 +13,7 @@
     "typecheck": "npm --workspace apps/web run typecheck",
     "test:py": "cd apps/ingestion && python -m pytest",
     "lint:py": "cd apps/ingestion && python -m ruff check src tests",
-    "migrate": "psql \"$DIRECT_DATABASE_URL\" -f db/migrations/001_initial.sql"
+    "migrate": "for file in db/migrations/*.sql; do psql \"$DIRECT_DATABASE_URL\" -f \"$file\"; done"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

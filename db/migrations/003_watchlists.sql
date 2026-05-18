@@ -31,4 +31,9 @@ create table if not exists watchlist_projects (
 
 create index if not exists watchlist_projects_project_idx on watchlist_projects (project_id);
 
-grant select, insert, update, delete on watchlists, watchlist_projects to ingestion_user;
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'ingestion_user') then
+    grant select, insert, update, delete on watchlists, watchlist_projects to ingestion_user;
+  end if;
+end $$;

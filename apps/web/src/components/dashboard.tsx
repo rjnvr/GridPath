@@ -502,32 +502,23 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
   }
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border px-6 py-4">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-normal">GridPath</h1>
-            <p className="text-sm text-muted-foreground">ERCOT interconnection queue intelligence</p>
-          </div>
-          <div className="flex items-center gap-3 text-sm text-muted-foreground">
-            <span className="inline-flex items-center gap-2 rounded border border-border px-3 py-2">
-              <Database size={16} />
-              {freshnessText(initialData.latestSnapshotAt)}
-            </span>
-            <span className="inline-flex items-center gap-2 rounded border border-border px-3 py-2">
-              <Activity size={16} />
-              {filteredProjects.length.toLocaleString()} visible projects
-            </span>
-          </div>
-        </div>
-      </header>
-
+    <main className="min-h-[calc(100vh-3.5rem)] bg-background text-foreground">
       <section
-        className="grid h-[calc(100vh-73px)]"
+        className="grid h-[calc(100vh-3.5rem)]"
         style={{ gridTemplateRows: gridRowsForMapSize(mapSize) }}
       >
         <div className="relative border-b border-border">
           <div ref={mapContainerRef} className="absolute inset-0" />
+          <div className="absolute left-4 top-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <span className="inline-flex items-center gap-2 rounded-md border border-border bg-card/95 px-3 py-2 shadow-xl backdrop-blur">
+              <Database size={16} />
+              {freshnessText(initialData.latestSnapshotAt)}
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-md border border-border bg-card/95 px-3 py-2 shadow-xl backdrop-blur">
+              <Activity size={16} />
+              {filteredProjects.length.toLocaleString()} visible projects
+            </span>
+          </div>
           <div className="absolute right-4 top-4 flex items-center gap-1 rounded-md border border-border bg-card/95 p-1 shadow-xl backdrop-blur">
             <Button
               type="button"

@@ -2,6 +2,11 @@ import type {
   DashboardData,
   GridProject,
   HealthData,
+  AnalysisData,
+  FuelMixTrend,
+  IsoCoverage,
+  MonthlyChangeTrend,
+  MonthlyProjectTrend,
   ProjectChange,
   RecentChange,
   Substation
@@ -73,6 +78,34 @@ type RecentChangeRow = {
   field_name: string
   old_value: string | null
   new_value: string | null
+}
+
+type CoverageRow = {
+  iso: string
+  first_report_date: Date | string | null
+  latest_report_date: Date | string | null
+  report_count: string | number
+}
+
+type MonthlyProjectTrendRow = {
+  month: Date | string
+  iso: string
+  project_count: string | number
+}
+
+type MonthlyChangeTrendRow = {
+  month: Date | string
+  iso: string
+  added_count: string | number
+  withdrawn_count: string | number
+  energized_count: string | number
+}
+
+type FuelMixTrendRow = {
+  month: Date | string
+  iso: string
+  fuel_type: string | null
+  project_count: string | number
 }
 
 function numberOrNull(value: string | number | null): number | null {
@@ -202,6 +235,28 @@ function mapRecentChange(row: RecentChangeRow): RecentChange {
   }
 }
 
+function toMonthString(value: Date | string): string {
+  return toIsoString(value)?.slice(0, 7) ?? String(value).slice(0, 7)
+}
+
+function toDateOnlyString(value: Date | string | null): string | null {
+  return toIsoString(value)?.slice(0, 10) ?? null
+}
+
+function coverageLabel(iso: string): string {
+  if (iso === "ERCOT") {
+    return "12+ months official ERCOT GIS reports"
+  }
+  if (iso === "CAISO") {
+    return "Official CAISO snapshots from first capture date"
+  }
+  return "Official queue snapshots"
+}
+
+function coverageSource(iso: string): IsoCoverage["source"] {
+  return iso === "ERCOT" ? "official_archive" : "captured_snapshots"
+}
+
 export async function getHealthData(): Promise<HealthData> {
   const generatedAt = new Date().toISOString()
   if (!process.env.DATABASE_URL) {
@@ -278,6 +333,162 @@ export async function getHealthData(): Promise<HealthData> {
       label: row.label ?? "unknown",
       count: countValue(row.count)
     })),
+    recentChanges: (changeRows as RecentChangeRow[]).map(mapRecentChange)
+  }
+}
+
+async function hasIngestionReportsTable(): Promise<boolean> {
+  if (!process.env.DATABASE_URL) return false
+  const sql = getSql()
+  const rows = await sql`select to_regclass('public.ingestion_reports') as table_name`
+  return Boolean((rows as Array<{ table_name: string | null }>)[0]?.table_name)
+}
+
+export async function getAnalysisData(): Promise<AnalysisData> {
+  const generatedAt = new Date().toISOString()
+  if (!process.env.DATABASE_URL) {
+    return {
+      generatedAt,
+      coverage: [],
+      projectTrends: [],
+      changeTrends: [],
+      fuelMix: [],
+      recentChanges: []
+    }
+  }
+
+  const sql = getSql()
+  const hasReportMetadata = await hasIngestionReportsTable()
+  const coverageQuery = hasReportMetadata
+    ? sql`
+        select
+          iso,
+          min(report_date) as first_report_date,
+          max(report_date) as latest_report_date,
+          count(*) as report_count
+        from ingestion_reports
+        where iso in ('ERCOT', 'CAISO')
+        group by iso
+        order by iso
+      `
+    : sql`
+        select
+          p.iso,
+          min(s.snapshot_date) as first_report_date,
+          max(s.snapshot_date) as latest_report_date,
+          count(distinct s.snapshot_date) as report_count
+        from project_snapshots s
+        join projects p on p.id = s.project_id
+        where p.iso in ('ERCOT', 'CAISO')
+        group by p.iso
+        order by p.iso
+      `
+
+  const [coverageRows, projectTrendRows, changeTrendRows, fuelMixRows, changeRows] =
+    await Promise.all([
+      coverageQuery,
+      sql`
+        select
+          date_trunc('month', s.snapshot_date)::date as month,
+          p.iso,
+          count(distinct p.id) as project_count
+        from project_snapshots s
+        join projects p on p.id = s.project_id
+        where p.iso in ('ERCOT', 'CAISO')
+          and s.snapshot_date >= date_trunc('month', current_date) - interval '11 months'
+        group by date_trunc('month', s.snapshot_date)::date, p.iso
+        order by month, p.iso
+      `,
+      sql`
+        with first_seen as (
+          select project_id, min(snapshot_date) as first_snapshot_date
+          from project_snapshots
+          group by project_id
+        )
+        select
+          date_trunc('month', s.snapshot_date)::date as month,
+          p.iso,
+          count(distinct p.id) filter (where fs.first_snapshot_date = s.snapshot_date) as added_count,
+          count(distinct p.id) filter (
+            where lower(coalesce(s.current_phase, s.current_status, '')) like '%withdraw%'
+          ) as withdrawn_count,
+          count(distinct p.id) filter (
+            where lower(coalesce(s.current_phase, s.current_status, '')) like '%energ%'
+               or lower(coalesce(s.current_phase, s.current_status, '')) like '%complete%'
+          ) as energized_count
+        from project_snapshots s
+        join projects p on p.id = s.project_id
+        join first_seen fs on fs.project_id = p.id
+        where p.iso in ('ERCOT', 'CAISO')
+          and s.snapshot_date >= date_trunc('month', current_date) - interval '11 months'
+        group by date_trunc('month', s.snapshot_date)::date, p.iso
+        order by month, p.iso
+      `,
+      sql`
+        select
+          date_trunc('month', s.snapshot_date)::date as month,
+          p.iso,
+          coalesce(p.fuel_type, 'unknown') as fuel_type,
+          count(distinct p.id) as project_count
+        from project_snapshots s
+        join projects p on p.id = s.project_id
+        where p.iso in ('ERCOT', 'CAISO')
+          and s.snapshot_date >= date_trunc('month', current_date) - interval '11 months'
+        group by date_trunc('month', s.snapshot_date)::date, p.iso, coalesce(p.fuel_type, 'unknown')
+        order by month, p.iso, project_count desc
+      `,
+      sql`
+        select
+          c.id,
+          p.iso,
+          p.queue_id,
+          p.project_name,
+          c.changed_at,
+          c.field_name,
+          c.old_value,
+          c.new_value
+        from project_status_changes c
+        join projects p on p.id = c.project_id
+        where p.iso in ('ERCOT', 'CAISO')
+        order by c.changed_at desc
+        limit 25
+      `
+    ])
+
+  return {
+    generatedAt,
+    coverage: (coverageRows as CoverageRow[]).map((row): IsoCoverage => ({
+      iso: row.iso,
+      label: coverageLabel(row.iso),
+      firstReportDate: toDateOnlyString(row.first_report_date),
+      latestReportDate: toDateOnlyString(row.latest_report_date),
+      reportCount: countValue(row.report_count),
+      source: coverageSource(row.iso)
+    })),
+    projectTrends: (projectTrendRows as MonthlyProjectTrendRow[]).map(
+      (row): MonthlyProjectTrend => ({
+        month: toMonthString(row.month),
+        iso: row.iso,
+        projectCount: countValue(row.project_count)
+      })
+    ),
+    changeTrends: (changeTrendRows as MonthlyChangeTrendRow[]).map(
+      (row): MonthlyChangeTrend => ({
+        month: toMonthString(row.month),
+        iso: row.iso,
+        addedCount: countValue(row.added_count),
+        withdrawnCount: countValue(row.withdrawn_count),
+        energizedCount: countValue(row.energized_count)
+      })
+    ),
+    fuelMix: (fuelMixRows as FuelMixTrendRow[]).map(
+      (row): FuelMixTrend => ({
+        month: toMonthString(row.month),
+        iso: row.iso,
+        fuelType: row.fuel_type ?? "unknown",
+        projectCount: countValue(row.project_count)
+      })
+    ),
     recentChanges: (changeRows as RecentChangeRow[]).map(mapRecentChange)
   }
 }

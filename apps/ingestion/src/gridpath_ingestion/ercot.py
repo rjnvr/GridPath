@@ -15,7 +15,11 @@ import pandas as pd
 
 from gridpath_ingestion.centroids import centroid_for_county
 from gridpath_ingestion.db import upsert_projects
-from gridpath_ingestion.discovery import discover_latest_ercot_gis_report
+from gridpath_ingestion.discovery import (
+    discover_ercot_gis_reports,
+    discover_latest_ercot_gis_report,
+    report_date,
+)
 from gridpath_ingestion.models import QueueProject
 
 EXPECTED_COLUMNS = {
@@ -214,18 +218,70 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Ingest ERCOT GIS queue data into Neon Postgres.")
     parser.add_argument("--file", type=Path, help="Local ERCOT GIS Excel file")
     parser.add_argument(
+        "--backfill-months",
+        type=int,
+        default=0,
+        help="Backfill the latest N official ERCOT GIS reports without overwriting current state.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Parse and log without writing to Postgres",
     )
     args = parser.parse_args(argv)
 
+    database_url = os.environ.get("DIRECT_DATABASE_URL") or os.environ.get("DATABASE_URL")
+    if args.backfill_months:
+        reports = discover_ercot_gis_reports(limit=args.backfill_months)
+        totals = {
+            "reports_seen": len(reports),
+            "projects_seen": 0,
+            "snapshots_written": 0,
+            "dry_run": args.dry_run,
+        }
+        if not args.dry_run and not database_url:
+            raise SystemExit("Set DIRECT_DATABASE_URL or DATABASE_URL.")
+
+        for report in reversed(reports):
+            workbook = download_report(report.url)
+            projects = parse_workbook(workbook, report.url)
+            snapshot_date = report_date(report).date()
+            totals["projects_seen"] += len(projects)
+            print(
+                json.dumps(
+                    {
+                        "event": "parsed_report",
+                        "iso": "ERCOT",
+                        "name": report.name,
+                        "published_at": report.published_at,
+                        "projects_seen": len(projects),
+                    },
+                    sort_keys=True,
+                )
+            )
+            if not args.dry_run:
+                stats = upsert_projects(
+                    projects,
+                    database_url or "",
+                    snapshot_date=snapshot_date,
+                    report_name=report.name,
+                    source_url=report.url,
+                    update_current=False,
+                )
+                totals["snapshots_written"] += stats["snapshots_written"]
+        print(json.dumps(totals, sort_keys=True))
+        return 0
+
     source_url = os.environ.get("ERCOT_GIS_URL")
+    report_name = "ERCOT GIS Report"
+    snapshot_date = date.today()
     workbook = args.file
     if not workbook:
         if not source_url:
             report = discover_latest_ercot_gis_report()
             source_url = report.url
+            report_name = report.name
+            snapshot_date = report_date(report).date()
             print(
                 json.dumps(
                     {
@@ -244,10 +300,16 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"projects_seen": len(projects), "dry_run": True}))
         return 0
 
-    database_url = os.environ.get("DIRECT_DATABASE_URL") or os.environ.get("DATABASE_URL")
     if not database_url:
         raise SystemExit("Set DIRECT_DATABASE_URL or DATABASE_URL.")
-    stats = upsert_projects(projects, database_url)
+    stats = upsert_projects(
+        projects,
+        database_url,
+        snapshot_date=snapshot_date,
+        report_name=report_name,
+        source_url=source_url,
+        update_current=True,
+    )
     print(json.dumps(stats, sort_keys=True))
     return 0
 
