@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 
 import { auth } from "@/lib/auth"
-import { createWatchlist, deleteWatchlist } from "@/lib/watchlists"
+import { WatchlistsNotProvisionedError, createWatchlist, deleteWatchlist } from "@/lib/watchlists"
+
+type WatchlistActionResult = { ok: true } | { ok: false; error: "not_provisioned" }
 
 async function requireUserId(): Promise<string> {
   const session = await auth()
@@ -15,23 +17,49 @@ async function requireUserId(): Promise<string> {
   return userId
 }
 
-export async function createWatchlistAction(formData: FormData) {
+async function createWatchlistForUser(formData: FormData): Promise<WatchlistActionResult> {
   const userId = await requireUserId()
   const name = String(formData.get("name") ?? "")
-  await createWatchlist(userId, name, {
-    iso: String(formData.get("iso") ?? "") || null,
-    fuelType: String(formData.get("fuelType") ?? "") || null,
-    phase: String(formData.get("phase") ?? "") || null,
-    mwBucket: String(formData.get("mwBucket") ?? "") || null,
-    ownerCompany: String(formData.get("ownerCompany") ?? "") || null
-  })
+  try {
+    await createWatchlist(userId, name, {
+      iso: String(formData.get("iso") ?? "") || null,
+      fuelType: String(formData.get("fuelType") ?? "") || null,
+      phase: String(formData.get("phase") ?? "") || null,
+      mwBucket: String(formData.get("mwBucket") ?? "") || null,
+      ownerCompany: String(formData.get("ownerCompany") ?? "") || null
+    })
+  } catch (error) {
+    if (error instanceof WatchlistsNotProvisionedError) {
+      return { ok: false, error: "not_provisioned" }
+    }
+    throw error
+  }
   revalidatePath("/watchlists")
+  return { ok: true }
 }
 
-export async function deleteWatchlistAction(formData: FormData) {
+export async function createWatchlistAction(formData: FormData): Promise<void> {
+  const result = await createWatchlistForUser(formData)
+  if (!result.ok) {
+    throw new Error("Watchlists are not provisioned")
+  }
+}
+
+export async function createWatchlistClientAction(formData: FormData): Promise<WatchlistActionResult> {
+  return createWatchlistForUser(formData)
+}
+
+export async function deleteWatchlistAction(formData: FormData): Promise<void> {
   const userId = await requireUserId()
   const id = String(formData.get("id") ?? "")
   if (!id) return
-  await deleteWatchlist(userId, id)
+  try {
+    await deleteWatchlist(userId, id)
+  } catch (error) {
+    if (error instanceof WatchlistsNotProvisionedError) {
+      throw new Error("Watchlists are not provisioned")
+    }
+    throw error
+  }
   revalidatePath("/watchlists")
 }
