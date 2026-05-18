@@ -79,3 +79,21 @@ export type HealthData = {
   fuelCounts: HealthBreakdown[]
   recentChanges: RecentChange[]
 }
+
+export type WatchlistFilter = {
+  iso: string | null
+  fuelType: string | null
+  phase: string | null
+  mwBucket: string | null
+  ownerCompany: string | null
+}
+
+export type Watchlist = {
+  id: string
+  name: string
+  filter: WatchlistFilter
+  notifyEmail: boolean
+  lastEmailedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
