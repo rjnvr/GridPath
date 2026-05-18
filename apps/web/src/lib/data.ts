@@ -281,3 +281,81 @@ export async function getHealthData(): Promise<HealthData> {
     recentChanges: (changeRows as RecentChangeRow[]).map(mapRecentChange)
   }
 }
+
+export type LandingStats = {
+  totalProjects: number
+  totalMwRequested: number | null
+  changesLast7d: number
+  latestSnapshotAt: string | null
+  isoBreakdown: { iso: string; projectCount: number }[]
+  recentChanges: RecentChange[]
+}
+
+export async function getLandingStats(): Promise<LandingStats> {
+  if (!process.env.DATABASE_URL) {
+    return {
+      totalProjects: 0,
+      totalMwRequested: null,
+      changesLast7d: 0,
+      latestSnapshotAt: null,
+      isoBreakdown: [],
+      recentChanges: []
+    }
+  }
+  const sql = getSql()
+  const [summaryRows, isoRows, freshnessRows, changeRows] = await Promise.all([
+    sql`
+      select
+        count(*)::bigint as total_projects,
+        coalesce(sum(mw_requested), 0)::numeric as total_mw,
+        (
+          select count(*) from project_status_changes c
+          join projects p on p.id = c.project_id
+          where p.iso in ('ERCOT', 'CAISO')
+            and c.changed_at >= now() - interval '7 days'
+        )::bigint as changes_7d
+      from projects
+      where iso in ('ERCOT', 'CAISO')
+    `,
+    sql`
+      select iso, count(*)::bigint as project_count
+      from projects
+      where iso in ('ERCOT', 'CAISO')
+      group by iso
+      order by iso
+    `,
+    sql`select max(captured_at) as latest_snapshot_at from project_snapshots`,
+    sql`
+      select
+        c.id, p.iso, p.queue_id, p.project_name,
+        c.changed_at, c.field_name, c.old_value, c.new_value
+      from project_status_changes c
+      join projects p on p.id = c.project_id
+      where p.iso in ('ERCOT', 'CAISO')
+      order by c.changed_at desc
+      limit 10
+    `
+  ])
+
+  const summary = (summaryRows as Array<{
+    total_projects: string | number
+    total_mw: string | number
+    changes_7d: string | number
+  }>)[0] ?? { total_projects: 0, total_mw: 0, changes_7d: 0 }
+
+  return {
+    totalProjects: countValue(summary.total_projects),
+    totalMwRequested: numberOrNull(summary.total_mw),
+    changesLast7d: countValue(summary.changes_7d),
+    latestSnapshotAt:
+      toIsoString(
+        (freshnessRows as Array<{ latest_snapshot_at: Date | string | null }>)[0]
+          ?.latest_snapshot_at ?? null
+      ) ?? null,
+    isoBreakdown: (isoRows as Array<{ iso: string; project_count: string | number }>).map((row) => ({
+      iso: row.iso,
+      projectCount: countValue(row.project_count)
+    })),
+    recentChanges: (changeRows as RecentChangeRow[]).map(mapRecentChange)
+  }
+}
