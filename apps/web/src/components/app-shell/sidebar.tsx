@@ -2,8 +2,8 @@
 
 import { Activity, BarChart3, Bookmark, LayoutDashboard, Search, Settings } from "lucide-react"
 import Link from "next/link"
-import { usePathname, useState } from "next/navigation"
-import { useEffect, useRef } from "react"
+import { usePathname } from "next/navigation"
+import { useEffect, useRef, useState } from "react"
 
 import { LogoMark } from "@/components/brand/logo-mark"
 import { cn } from "@/lib/utils"
@@ -17,7 +17,7 @@ const NAV = [
   { href: "/account", label: "Account", icon: Settings }
 ]
 
-export function Sidebar() {
+export function Sidebar({ className }: { className?: string }) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
   const sidebarRef = useRef<HTMLElement | null>(null)
@@ -42,9 +42,8 @@ export function Sidebar() {
       aria-label="Primary"
       className={cn(
         "flex h-full flex-col gap-1 p-3 transition-all duration-200",
-        collapsed
-          ? "w-[80px]" /* collapsed width */
-          : "w-[240px]" /* expanded width */
+        collapsed ? "w-[80px]" : "w-[240px]",
+        className
       )}
     >
       <Link
