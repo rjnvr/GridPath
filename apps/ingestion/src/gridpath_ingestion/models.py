@@ -28,3 +28,11 @@ class QueueProject(BaseModel):
     owner_company: str | None = None
     raw_source_url: str | None = None
     raw_data: dict[str, Any] = Field(default_factory=dict)
+
+
+class SourceReport(BaseModel):
+    iso: str
+    source_url: str
+    source_name: str | None = None
+    published_at: str | None = None
+    report_date: date | None = None
