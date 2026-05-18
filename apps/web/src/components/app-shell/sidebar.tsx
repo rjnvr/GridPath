@@ -4,6 +4,7 @@ import { Activity, LayoutDashboard, Settings } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
+import { LogoMark } from "@/components/brand/logo-mark"
 import { cn } from "@/lib/utils"
 
 const NAV = [
@@ -16,8 +17,12 @@ export function Sidebar() {
   const pathname = usePathname()
   return (
     <nav aria-label="Primary" className="flex h-full flex-col gap-1 p-3">
-      <Link href="/dashboard" className="mb-4 flex items-center gap-2 px-2 py-1">
-        <div className="h-6 w-6 rounded bg-primary" aria-hidden />
+      <Link
+        href="/dashboard"
+        className="mb-4 flex items-center gap-2 px-2 py-1"
+        aria-label="GridPath home"
+      >
+        <LogoMark className="h-6 w-6" />
         <span className="text-sm font-semibold tracking-tight">GridPath</span>
       </Link>
       {NAV.map(({ href, label, icon: Icon }) => {
