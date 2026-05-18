@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { Database } from "lucide-react"
 
 import { MobileNav } from "./mobile-nav"
 import { Sidebar } from "./sidebar"
@@ -24,9 +25,17 @@ export function AppShell({ children, user }: AppShellProps) {
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex h-14 items-center justify-between border-b border-border px-4">
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 items-center gap-3">
               <MobileNav />
-              <span className="text-sm font-medium md:hidden">GridPath</span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <Database className="hidden h-4 w-4 text-primary sm:block" />
+                  <span className="truncate text-sm font-semibold tracking-tight">GridPath</span>
+                </div>
+                <p className="hidden truncate text-xs text-muted-foreground sm:block">
+                  ERCOT + CAISO interconnection queue intelligence
+                </p>
+              </div>
             </div>
             <UserMenu email={user.email} name={user.name} />
           </header>

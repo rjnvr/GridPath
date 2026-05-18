@@ -72,6 +72,11 @@ def discover_latest_ercot_gis_report() -> DiscoveredReport:
     return list_ercot_gis_reports()[-1]
 
 
+def discover_ercot_gis_reports(limit: int | None = None) -> list[DiscoveredReport]:
+    reports = list(reversed(list_ercot_gis_reports()))
+    return reports[:limit] if limit else reports
+
+
 def discover_latest_caiso_public_queue_report(
     page_url: str = CAISO_PUBLIC_QUEUE_PAGE_URL,
 ) -> DiscoveredReport:

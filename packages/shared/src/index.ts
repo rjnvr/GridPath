@@ -86,6 +86,45 @@ export type DashboardData = {
   latestSnapshotAt: string | null
 }
 
+export type IsoCoverage = {
+  iso: string
+  label: string
+  firstReportDate: string | null
+  latestReportDate: string | null
+  reportCount: number
+  source: "official_archive" | "captured_snapshots"
+}
+
+export type MonthlyProjectTrend = {
+  month: string
+  iso: string
+  projectCount: number
+}
+
+export type MonthlyChangeTrend = {
+  month: string
+  iso: string
+  addedCount: number
+  withdrawnCount: number
+  energizedCount: number
+}
+
+export type FuelMixTrend = {
+  month: string
+  iso: string
+  fuelType: string
+  projectCount: number
+}
+
+export type AnalysisData = {
+  generatedAt: string
+  coverage: IsoCoverage[]
+  projectTrends: MonthlyProjectTrend[]
+  changeTrends: MonthlyChangeTrend[]
+  fuelMix: FuelMixTrend[]
+  recentChanges: RecentChange[]
+}
+
 export type IsoHealth = {
   iso: string
   projectCount: number

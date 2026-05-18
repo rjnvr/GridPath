@@ -1,6 +1,6 @@
 "use client"
 
-import { Activity, Bookmark, LayoutDashboard, Settings } from "lucide-react"
+import { Activity, BarChart3, Bookmark, LayoutDashboard, Search, Settings } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
@@ -9,6 +9,8 @@ import { cn } from "@/lib/utils"
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/search", label: "Search", icon: Search },
+  { href: "/analysis", label: "Analysis", icon: BarChart3 },
   { href: "/watchlists", label: "Watchlists", icon: Bookmark },
   { href: "/health", label: "Data Health", icon: Activity },
   { href: "/account", label: "Account", icon: Settings }
