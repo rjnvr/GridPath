@@ -1,6 +1,6 @@
 # GridPath
 
-GridPath is an ERCOT-first interconnection queue intelligence app. It stores normalized queue records in Neon Postgres with PostGIS, snapshots every ingestion run, tracks field-level changes, and renders the latest data in a desktop-focused Next.js dashboard.
+GridPath is an ERCOT/CAISO-first interconnection queue intelligence app. It stores normalized queue records in Neon Postgres with PostGIS, tracks source reports and snapshots, classifies queue-change events, and renders the latest data in a desktop-focused Next.js dashboard.
 
 ## Structure
 
@@ -46,6 +46,15 @@ If `ERCOT_GIS_URL` is omitted, the script discovers the latest public GIS workbo
 
 The ingestion job is idempotent for `projects`, writes snapshots for every parsed project, and records field-level changes in `project_status_changes`.
 
+Backfill official ERCOT GIS reports oldest-to-newest:
+
+```bash
+cd apps/ingestion
+python -m gridpath_ingestion.ercot --backfill
+```
+
+Backfill skips source reports already marked successful. Use `--force` only for manual repair.
+
 ## Manual CAISO Ingestion
 
 Download the CAISO Public Queue Report, then run:
@@ -61,7 +70,7 @@ If no file or `CAISO_QUEUE_URL` is provided, the script discovers `publicqueuere
 
 ## Data Health
 
-Visit `/health` in the web app to inspect latest snapshot time by ISO, project counts, phase/fuel breakdowns, and recent tracked changes.
+Visit `/health` in the web app to inspect latest snapshot time by ISO, source report status, event volume, project counts, phase/fuel breakdowns, and recent tracked changes.
 
 ## Web App
 
@@ -80,7 +89,6 @@ The app queries Neon only from server-side Next.js code. Database credentials ar
 
 ## Known Limitations
 
-- ERCOT only.
 - County-centroid project locations.
 - Desktop-first UI.
-- No auth, billing, forecasting, alerts, or transmission lines yet.
+- No billing, forecasting, user-facing alert emails, or transmission lines yet.
