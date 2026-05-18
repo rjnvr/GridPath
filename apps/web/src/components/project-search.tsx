@@ -11,7 +11,8 @@ import {
   type SortingState,
   useReactTable
 } from "@tanstack/react-table"
-import { ArrowUpDown, Search, X } from "lucide-react"
+import { ArrowUpDown, ExternalLink, Search, X } from "lucide-react"
+import Link from "next/link"
 import { useMemo, useState } from "react"
 
 import { Button } from "@/components/ui/button"
@@ -32,7 +33,15 @@ const columns: ColumnDef<GridProject>[] = [
   {
     accessorKey: "projectName",
     header: "Project",
-    cell: ({ row }) => row.original.projectName ?? "Unnamed project"
+    cell: ({ row }) => (
+      <Link
+        href={`/projects/${row.original.id}`}
+        onClick={(event) => event.stopPropagation()}
+        className="font-medium underline-offset-4 hover:underline"
+      >
+        {row.original.projectName ?? "Unnamed project"}
+      </Link>
+    )
   },
   {
     accessorKey: "mwRequested",
@@ -278,6 +287,13 @@ function ProjectDetail({ project, onClose }: { project: GridProject; onClose: ()
         <div>
           <p className="font-mono text-xs text-muted-foreground">{project.iso} · {project.queueId}</p>
           <h2 className="mt-1 text-xl font-semibold">{project.projectName ?? "Unnamed project"}</h2>
+          <Link
+            href={`/projects/${project.id}`}
+            className="mt-3 inline-flex items-center gap-1 text-sm text-primary underline-offset-4 hover:underline"
+          >
+            Open full detail
+            <ExternalLink className="h-3.5 w-3.5" />
+          </Link>
         </div>
         <button type="button" onClick={onClose} className="rounded border border-border p-2" aria-label="Close">
           <X size={16} />
