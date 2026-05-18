@@ -9,6 +9,7 @@ export default {
   providers: [],
   pages: {
     signIn: "/login",
+    verifyRequest: "/verify-request",
     error: "/error"
   },
   callbacks: {
