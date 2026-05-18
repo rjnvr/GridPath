@@ -26,6 +26,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Database,
+  ExternalLink,
   Filter,
   ListChecks,
   Maximize2,
@@ -34,8 +35,9 @@ import {
   X
 } from "lucide-react"
 import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from "maplibre-gl"
+import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { type KeyboardEvent, useEffect, useMemo, useRef, useState, useTransition } from "react"
+import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { toast } from "sonner"
 
 import { createWatchlistClientAction } from "@/app/(app)/watchlists/actions"
@@ -108,7 +110,16 @@ const columns: ColumnDef<GridProject>[] = [
   },
   {
     accessorKey: "projectName",
-    header: "Project"
+    header: "Project",
+    cell: ({ row }) => (
+      <Link
+        href={`/projects/${row.original.id}`}
+        onClick={(event) => event.stopPropagation()}
+        className="font-medium underline-offset-4 hover:underline"
+      >
+        {row.original.projectName ?? "Unnamed project"}
+      </Link>
+    )
   },
   {
     accessorKey: "mwRequested",
@@ -620,16 +631,6 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     setEventFilters({ iso: "all", severity: "all", eventType: "all", timeWindow: "30d" })
   }
 
-  function handleProjectRowKeyDown(
-    event: KeyboardEvent<HTMLTableRowElement>,
-    project: GridProject
-  ) {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault()
-      setSelectedProject(project)
-    }
-  }
-
   return (
     <main className="min-h-[calc(100vh-3.5rem)] bg-background text-foreground">
       <section
@@ -909,9 +910,6 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                   <tr
                     key={row.id}
                     onClick={() => setSelectedProject(row.original)}
-                    onKeyDown={(event) => handleProjectRowKeyDown(event, row.original)}
-                    role="button"
-                    tabIndex={0}
                     className="cursor-pointer border-b border-border/70 hover:bg-white/5"
                   >
                     {row.getVisibleCells().map((cell) => (
@@ -993,16 +991,6 @@ function EventTable({
     onSelectProject(projectsById.get(event.projectId) ?? null)
   }
 
-  function handleEventRowKeyDown(
-    keyboardEvent: KeyboardEvent<HTMLTableRowElement>,
-    queueEvent: QueueEvent
-  ) {
-    if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
-      keyboardEvent.preventDefault()
-      selectEventProject(queueEvent)
-    }
-  }
-
   return (
     <div className="min-h-0 flex-1 overflow-auto">
       <table className="w-full border-collapse text-left text-sm">
@@ -1027,9 +1015,6 @@ function EventTable({
               <tr
                 key={event.id}
                 onClick={() => selectEventProject(event)}
-                onKeyDown={(keyboardEvent) => handleEventRowKeyDown(keyboardEvent, event)}
-                role="button"
-                tabIndex={0}
                 className="cursor-pointer border-b border-border/70 hover:bg-white/5"
               >
                 <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-muted-foreground">
@@ -1056,7 +1041,13 @@ function EventTable({
                 <td className="px-4 py-3">
                   <span className="font-mono text-xs text-muted-foreground">{event.queueId}</span>
                   <br />
-                  {event.projectName ?? "Unnamed project"}
+                  <Link
+                    href={`/projects/${event.projectId}`}
+                    onClick={(clickEvent) => clickEvent.stopPropagation()}
+                    className="font-medium underline-offset-4 hover:underline"
+                  >
+                    {event.projectName ?? "Unnamed project"}
+                  </Link>
                 </td>
                 <td className="max-w-[220px] truncate px-4 py-3 text-xs text-muted-foreground">
                   {event.sourceName ?? event.sourceUrl ?? "—"}
@@ -1092,6 +1083,13 @@ function ProjectDrawer({ project, onClose }: { project: GridProject; onClose: ()
         <div>
           <p className="font-mono text-xs text-muted-foreground">{project.queueId}</p>
           <h2 className="mt-1 text-xl font-semibold">{project.projectName ?? "Unnamed project"}</h2>
+          <Link
+            href={`/projects/${project.id}`}
+            className="mt-3 inline-flex items-center gap-1 text-sm text-primary underline-offset-4 hover:underline"
+          >
+            Open full detail
+            <ExternalLink className="h-3.5 w-3.5" />
+          </Link>
         </div>
         <button type="button" onClick={onClose} className="rounded border border-border p-2" aria-label="Close">
           <X size={16} />

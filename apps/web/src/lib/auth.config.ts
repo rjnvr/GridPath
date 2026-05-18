@@ -9,7 +9,8 @@ const PROTECTED_PREFIXES = [
   "/analysis",
   "/health",
   "/account",
-  "/watchlists"
+  "/watchlists",
+  "/projects"
 ]
 
 export default {

@@ -79,6 +79,27 @@ export type Substation = {
   lng: number | null
 }
 
+export type NearbySubstation = Substation & {
+  distanceMiles: number | null
+}
+
+export type ProjectSnapshot = {
+  id: string
+  snapshotDate: string
+  capturedAt: string
+  currentPhase: string | null
+  currentStatus: string | null
+  mwRequested: number | null
+  sourceUrl: string | null
+  sourceName: string | null
+}
+
+export type ProjectDetailData = {
+  project: GridProject
+  snapshots: ProjectSnapshot[]
+  nearbySubstations: NearbySubstation[]
+}
+
 export type DashboardData = {
   projects: GridProject[]
   substations: Substation[]
