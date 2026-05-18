@@ -5,17 +5,33 @@ import {
   type ColumnDef,
   flexRender,
   getCoreRowModel,
+  getPaginationRowModel,
   getSortedRowModel,
+  type PaginationState,
   type SortingState,
   useReactTable
 } from "@tanstack/react-table"
-import { Activity, Bookmark, Database, Filter, MapPin, X } from "lucide-react"
+import {
+  Activity,
+  ArrowUpDown,
+  Bookmark,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Database,
+  Filter,
+  Maximize2,
+  Minimize2,
+  Search,
+  X
+} from "lucide-react"
 import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from "maplibre-gl"
 import { useSearchParams } from "next/navigation"
 import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { toast } from "sonner"
 
-import { createWatchlistAction } from "@/app/(app)/watchlists/actions"
+import { createWatchlistClientAction } from "@/app/(app)/watchlists/actions"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -62,9 +78,16 @@ type FilterState = {
   fuelType: string
   phase: string
   mwBucket: string
+  ownerCompany: string
 }
 
+type MapSize = "compact" | "balanced" | "expanded"
+
 const columns: ColumnDef<GridProject>[] = [
+  {
+    accessorKey: "iso",
+    header: "ISO"
+  },
   {
     accessorKey: "queueId",
     header: "Queue ID"
@@ -87,8 +110,14 @@ const columns: ColumnDef<GridProject>[] = [
     header: "Phase"
   },
   {
+    accessorKey: "ownerCompany",
+    header: "Owner",
+    cell: ({ row }) => row.original.ownerCompany ?? "—"
+  },
+  {
     accessorKey: "filedDate",
-    header: "Filed"
+    header: "Filed",
+    cell: ({ row }) => row.original.filedDate ?? "—"
   }
 ]
 
@@ -190,8 +219,47 @@ function filterFromSearchParams(params: URLSearchParams): FilterState {
     iso: iso === "ERCOT" || iso === "CAISO" ? iso : "all",
     fuelType: params.get("fuel") ?? "all",
     phase: params.get("phase") ?? "all",
-    mwBucket: mw && VALID_MW_BUCKETS.has(mw) ? mw : "all"
+    mwBucket: mw && VALID_MW_BUCKETS.has(mw) ? mw : "all",
+    ownerCompany: params.get("owner") ?? ""
   }
+}
+
+function projectMatchesSearch(project: GridProject, query: string): boolean {
+  if (!query) {
+    return true
+  }
+  const haystack = [
+    project.iso,
+    project.queueId,
+    project.projectName,
+    project.ownerCompany,
+    project.county,
+    project.state,
+    project.fuelType,
+    project.currentPhase,
+    project.currentStatus
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+  return haystack.includes(query)
+}
+
+function gridRowsForMapSize(size: MapSize): string {
+  if (size === "compact") return "minmax(220px, 32%) 1fr"
+  if (size === "expanded") return "minmax(460px, 72%) 1fr"
+  return "minmax(340px, 54%) 1fr"
+}
+
+function hasActiveFilters(filters: FilterState, searchQuery: string): boolean {
+  return (
+    searchQuery.length > 0 ||
+    filters.iso !== "all" ||
+    filters.fuelType !== "all" ||
+    filters.phase !== "all" ||
+    filters.mwBucket !== "all" ||
+    filters.ownerCompany.trim().length > 0
+  )
 }
 
 export function Dashboard({ initialData }: { initialData: DashboardData }) {
@@ -199,7 +267,10 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
   const [filters, setFilters] = useState<FilterState>(() =>
     filterFromSearchParams(new URLSearchParams(searchParams?.toString() ?? ""))
   )
+  const [searchQuery, setSearchQuery] = useState("")
+  const [mapSize, setMapSize] = useState<MapSize>("balanced")
   const [sorting, setSorting] = useState<SortingState>([])
+  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 50 })
   const [selectedProject, setSelectedProject] = useState<GridProject | null>(null)
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
@@ -232,16 +303,40 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
       ].sort(),
     [filters.iso, initialData.projects]
   )
+  const ownerCompanies = useMemo(
+    () =>
+      [
+        ...new Set(
+          initialData.projects
+            .filter((project) => filters.iso === "all" || project.iso === filters.iso)
+            .map((project) => project.ownerCompany)
+            .filter(Boolean)
+        )
+      ].sort(),
+    [filters.iso, initialData.projects]
+  )
 
   const filteredProjects = useMemo(
-    () =>
-      initialData.projects.filter((project) => {
+    () => {
+      const normalizedSearch = searchQuery.trim().toLowerCase()
+      const normalizedOwner = filters.ownerCompany.trim().toLowerCase()
+      return initialData.projects.filter((project) => {
         const isoMatch = filters.iso === "all" || project.iso === filters.iso
         const fuelMatch = filters.fuelType === "all" || project.fuelType === filters.fuelType
         const phaseMatch = filters.phase === "all" || project.currentPhase === filters.phase
-        return isoMatch && fuelMatch && phaseMatch && passesMwBucket(project, filters.mwBucket)
-      }),
-    [filters, initialData.projects]
+        const ownerMatch =
+          !normalizedOwner || project.ownerCompany?.toLowerCase().includes(normalizedOwner)
+        return (
+          isoMatch &&
+          fuelMatch &&
+          phaseMatch &&
+          ownerMatch &&
+          passesMwBucket(project, filters.mwBucket) &&
+          projectMatchesSearch(project, normalizedSearch)
+        )
+      })
+    },
+    [filters, initialData.projects, searchQuery]
   )
   const filteredProjectsRef = useRef<GridProject[]>(filteredProjects)
 
@@ -252,11 +347,17 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
   const table = useReactTable({
     data: filteredProjects,
     columns,
-    state: { sorting },
+    state: { sorting, pagination },
     onSortingChange: setSorting,
+    onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel()
+    getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel()
   })
+
+  useEffect(() => {
+    setPagination((current) => ({ ...current, pageIndex: 0 }))
+  }, [filters, searchQuery])
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
@@ -386,6 +487,20 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     ;(map.getSource("projects") as GeoJSONSource).setData(projectsToGeoJson(filteredProjects))
   }, [filteredProjects])
 
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) {
+      return
+    }
+    const resize = window.setTimeout(() => map.resize(), 220)
+    return () => window.clearTimeout(resize)
+  }, [mapSize])
+
+  function clearFilters() {
+    setSearchQuery("")
+    setFilters({ iso: "all", fuelType: "all", phase: "all", mwBucket: "all", ownerCompany: "" })
+  }
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border px-6 py-4">
@@ -407,9 +522,44 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         </div>
       </header>
 
-      <section className="grid h-[calc(100vh-73px)] grid-rows-[minmax(360px,55%)_1fr]">
+      <section
+        className="grid h-[calc(100vh-73px)]"
+        style={{ gridTemplateRows: gridRowsForMapSize(mapSize) }}
+      >
         <div className="relative border-b border-border">
           <div ref={mapContainerRef} className="absolute inset-0" />
+          <div className="absolute right-4 top-4 flex items-center gap-1 rounded-md border border-border bg-card/95 p-1 shadow-xl backdrop-blur">
+            <Button
+              type="button"
+              variant={mapSize === "compact" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setMapSize("compact")}
+              aria-label="Make map smaller"
+              title="Smaller map"
+            >
+              <Minimize2 className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant={mapSize === "balanced" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setMapSize("balanced")}
+              aria-label="Use balanced map size"
+              title="Balanced map"
+            >
+              <Activity className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant={mapSize === "expanded" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setMapSize("expanded")}
+              aria-label="Expand map"
+              title="Expand map"
+            >
+              <Maximize2 className="h-4 w-4" />
+            </Button>
+          </div>
           {initialData.projects.length === 0 ? (
             <div className="absolute left-6 top-6 rounded border border-border bg-panel px-4 py-3 text-sm text-muted-foreground">
               Set `DATABASE_URL`, run migrations, and ingest ERCOT data to populate the map.
@@ -417,65 +567,99 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
           ) : null}
         </div>
 
-        <div className="overflow-hidden bg-panel">
-          <div className="flex items-center gap-3 border-b border-border px-4 py-3">
-            <Filter size={16} className="text-muted-foreground" />
-            <select
-              value={filters.iso}
-              onChange={(event) =>
-                setFilters((current) => ({
-                  ...current,
-                  iso: event.target.value,
-                  fuelType: "all",
-                  phase: "all"
-                }))
-              }
-              className="rounded border border-border bg-background px-3 py-2 text-sm"
-            >
-              <option value="all">All ISOs</option>
-              <option value="ERCOT">ERCOT</option>
-              <option value="CAISO">CAISO</option>
-            </select>
-            <select
-              value={filters.fuelType}
-              onChange={(event) => setFilters((current) => ({ ...current, fuelType: event.target.value }))}
-              className="rounded border border-border bg-background px-3 py-2 text-sm"
-            >
-              <option value="all">All fuels</option>
-              {fuelTypes.map((fuel) => (
-                <option key={fuel} value={fuel ?? ""}>
-                  {fuel}
-                </option>
-              ))}
-            </select>
-            <select
-              value={filters.mwBucket}
-              onChange={(event) => setFilters((current) => ({ ...current, mwBucket: event.target.value }))}
-              className="rounded border border-border bg-background px-3 py-2 text-sm"
-            >
-              <option value="all">All MW</option>
-              <option value="lt100">&lt; 100 MW</option>
-              <option value="100to500">100-499 MW</option>
-              <option value="gte500">500+ MW</option>
-            </select>
-            <select
-              value={filters.phase}
-              onChange={(event) => setFilters((current) => ({ ...current, phase: event.target.value }))}
-              className="rounded border border-border bg-background px-3 py-2 text-sm"
-            >
-              <option value="all">All phases</option>
-              {phases.map((phase) => (
-                <option key={phase} value={phase ?? ""}>
-                  {phase}
-                </option>
-              ))}
-            </select>
-            <div className="ml-auto">
-              <SaveViewDialog filters={filters} />
+        <div className="flex min-h-0 flex-col overflow-hidden bg-panel">
+          <div className="shrink-0 border-b border-border px-4 py-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative min-w-[240px] flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Search project, queue ID, owner, county, status"
+                  className="pl-9"
+                />
+              </div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Filter size={16} />
+                <span>{filteredProjects.length.toLocaleString()} results</span>
+              </div>
+              <div className="ml-auto flex items-center gap-2">
+                {hasActiveFilters(filters, searchQuery.trim()) ? (
+                  <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
+                    Clear
+                  </Button>
+                ) : null}
+                <SaveViewDialog filters={filters} />
+              </div>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+              <select
+                value={filters.iso}
+                onChange={(event) =>
+                  setFilters((current) => ({
+                    ...current,
+                    iso: event.target.value,
+                    fuelType: "all",
+                    phase: "all",
+                    ownerCompany: ""
+                  }))
+                }
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="all">All ISOs</option>
+                <option value="ERCOT">ERCOT</option>
+                <option value="CAISO">CAISO</option>
+              </select>
+              <select
+                value={filters.fuelType}
+                onChange={(event) => setFilters((current) => ({ ...current, fuelType: event.target.value }))}
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="all">All fuels</option>
+                {fuelTypes.map((fuel) => (
+                  <option key={fuel} value={fuel ?? ""}>
+                    {fuel}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={filters.mwBucket}
+                onChange={(event) => setFilters((current) => ({ ...current, mwBucket: event.target.value }))}
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="all">All MW</option>
+                <option value="lt100">&lt; 100 MW</option>
+                <option value="100to500">100-499 MW</option>
+                <option value="gte500">500+ MW</option>
+              </select>
+              <select
+                value={filters.phase}
+                onChange={(event) => setFilters((current) => ({ ...current, phase: event.target.value }))}
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="all">All phases</option>
+                {phases.map((phase) => (
+                  <option key={phase} value={phase ?? ""}>
+                    {phase}
+                  </option>
+                ))}
+              </select>
+              <input
+                list="owner-companies"
+                value={filters.ownerCompany}
+                onChange={(event) => setFilters((current) => ({ ...current, ownerCompany: event.target.value }))}
+                placeholder="Owner contains"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              />
+              <datalist id="owner-companies">
+                {ownerCompanies.slice(0, 200).map((owner) => (
+                  <option key={owner} value={owner ?? ""} />
+                ))}
+              </datalist>
             </div>
           </div>
 
-          <div className="h-full overflow-auto">
+          <div className="min-h-0 flex-1 overflow-auto">
             <table className="w-full border-collapse text-left text-sm">
               <thead className="sticky top-0 bg-panel text-xs uppercase text-muted-foreground">
                 {table.getHeaderGroups().map((headerGroup) => (
@@ -485,9 +669,17 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                         <button
                           type="button"
                           onClick={header.column.getToggleSortingHandler()}
-                          className="text-left"
+                          className="inline-flex items-center gap-1 text-left"
                         >
                           {flexRender(header.column.columnDef.header, header.getContext())}
+                          <ArrowUpDown className="h-3.5 w-3.5 opacity-60" />
+                          <span className="sr-only">
+                            {header.column.getIsSorted() === "asc"
+                              ? "sorted ascending"
+                              : header.column.getIsSorted() === "desc"
+                                ? "sorted descending"
+                                : "not sorted"}
+                          </span>
                         </button>
                       </th>
                     ))}
@@ -508,8 +700,46 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                     ))}
                   </tr>
                 ))}
+                {table.getRowModel().rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={columns.length} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                      No projects match these filters.
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
+          </div>
+          <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border px-4 py-3 text-sm text-muted-foreground">
+            <span>
+              Page {table.getState().pagination.pageIndex + 1} of {Math.max(table.getPageCount(), 1)}
+            </span>
+            <div className="flex items-center gap-2">
+              <select
+                value={table.getState().pagination.pageSize}
+                onChange={(event) => table.setPageSize(Number(event.target.value))}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                aria-label="Rows per page"
+              >
+                {[25, 50, 100, 250].map((pageSize) => (
+                  <option key={pageSize} value={pageSize}>
+                    {pageSize} rows
+                  </option>
+                ))}
+              </select>
+              <Button type="button" variant="ghost" size="sm" onClick={() => table.firstPage()} disabled={!table.getCanPreviousPage()}>
+                <ChevronsLeft className="h-4 w-4" />
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => table.lastPage()} disabled={!table.getCanNextPage()}>
+                <ChevronsRight className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </div>
       </section>
@@ -551,7 +781,7 @@ function ProjectDrawer({ project, onClose }: { project: GridProject; onClose: ()
       <div className="space-y-6 overflow-y-auto p-5">
         <section>
           <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
-            <MapPin size={16} />
+            <Database size={16} />
             Project fields
           </h3>
           <dl className="grid grid-cols-2 gap-3 text-sm">
@@ -597,6 +827,7 @@ function filterSummary(filters: FilterState): string {
   if (filters.mwBucket === "lt100") parts.push("< 100 MW")
   else if (filters.mwBucket === "100to500") parts.push("100–499 MW")
   else if (filters.mwBucket === "gte500") parts.push("500+ MW")
+  if (filters.ownerCompany.trim()) parts.push(`owner: ${filters.ownerCompany.trim()}`)
   return parts.join(" · ")
 }
 
@@ -610,7 +841,11 @@ function SaveViewDialog({ filters }: { filters: FilterState }) {
     if (!submittedName) return
     startTransition(async () => {
       try {
-        await createWatchlistAction(formData)
+        const result = await createWatchlistClientAction(formData)
+        if (!result.ok && result.error === "not_provisioned") {
+          toast.error("Apply the watchlists migration in Neon before saving views.")
+          return
+        }
         toast.success(`Saved "${submittedName}" to your watchlists`)
         setName("")
         setOpen(false)
@@ -656,6 +891,7 @@ function SaveViewDialog({ filters }: { filters: FilterState }) {
           <input type="hidden" name="fuelType" value={filters.fuelType === "all" ? "" : filters.fuelType} />
           <input type="hidden" name="phase" value={filters.phase === "all" ? "" : filters.phase} />
           <input type="hidden" name="mwBucket" value={filters.mwBucket === "all" ? "" : filters.mwBucket} />
+          <input type="hidden" name="ownerCompany" value={filters.ownerCompany.trim()} />
           <DialogFooter>
             <Button type="submit" disabled={pending}>
               {pending ? "Saving…" : "Save watchlist"}

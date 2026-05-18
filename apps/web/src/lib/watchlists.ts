@@ -57,17 +57,44 @@ export function normalizeFilter(input: Partial<WatchlistFilter>): WatchlistFilte
   }
 }
 
+export class WatchlistsNotProvisionedError extends Error {
+  constructor() {
+    super("watchlists table is not provisioned")
+    this.name = "WatchlistsNotProvisionedError"
+  }
+}
+
+function isUndefinedTableError(error: unknown): boolean {
+  // Postgres SQLSTATE 42P01 = undefined_table. The Neon driver surfaces it on
+  // `error.code`, but fall back to message sniffing for older driver versions.
+  const err = error as { code?: string; message?: string } | null
+  if (!err) return false
+  if (err.code === "42P01") return true
+  return typeof err.message === "string" && /relation .* does not exist/i.test(err.message)
+}
+
+function throwIfNotProvisioned(error: unknown): never {
+  if (isUndefinedTableError(error)) {
+    throw new WatchlistsNotProvisionedError()
+  }
+  throw error
+}
+
 export async function listWatchlists(userId: string): Promise<Watchlist[]> {
   if (!process.env.DATABASE_URL) return []
   const sql = getSql()
-  const rows = await sql`
-    select id, name, iso, fuel_type, phase, mw_bucket, owner_company,
-           notify_email, last_emailed_at, created_at, updated_at
-    from watchlists
-    where user_id = ${userId}
-    order by created_at desc
-  `
-  return (rows as WatchlistRow[]).map(mapWatchlist)
+  try {
+    const rows = await sql`
+      select id, name, iso, fuel_type, phase, mw_bucket, owner_company,
+             notify_email, last_emailed_at, created_at, updated_at
+      from watchlists
+      where user_id = ${userId}
+      order by created_at desc
+    `
+    return (rows as WatchlistRow[]).map(mapWatchlist)
+  } catch (error) {
+    throwIfNotProvisioned(error)
+  }
 }
 
 export async function createWatchlist(
@@ -85,39 +112,51 @@ export async function createWatchlist(
     throw new Error("Watchlist name must be 120 characters or fewer")
   }
   const normalized = normalizeFilter(filter)
-  const rows = await sql`
-    insert into watchlists (user_id, name, iso, fuel_type, phase, mw_bucket, owner_company, notify_email)
-    values (
-      ${userId},
-      ${trimmedName},
-      ${normalized.iso},
-      ${normalized.fuelType},
-      ${normalized.phase},
-      ${normalized.mwBucket},
-      ${normalized.ownerCompany},
-      ${notifyEmail}
-    )
-    returning id, name, iso, fuel_type, phase, mw_bucket, owner_company,
-              notify_email, last_emailed_at, created_at, updated_at
-  `
-  return mapWatchlist((rows as WatchlistRow[])[0])
+  try {
+    const rows = await sql`
+      insert into watchlists (user_id, name, iso, fuel_type, phase, mw_bucket, owner_company, notify_email)
+      values (
+        ${userId},
+        ${trimmedName},
+        ${normalized.iso},
+        ${normalized.fuelType},
+        ${normalized.phase},
+        ${normalized.mwBucket},
+        ${normalized.ownerCompany},
+        ${notifyEmail}
+      )
+      returning id, name, iso, fuel_type, phase, mw_bucket, owner_company,
+                notify_email, last_emailed_at, created_at, updated_at
+    `
+    return mapWatchlist((rows as WatchlistRow[])[0])
+  } catch (error) {
+    throwIfNotProvisioned(error)
+  }
 }
 
 export async function deleteWatchlist(userId: string, watchlistId: string): Promise<void> {
   const sql = getSql()
-  await sql`delete from watchlists where id = ${watchlistId} and user_id = ${userId}`
+  try {
+    await sql`delete from watchlists where id = ${watchlistId} and user_id = ${userId}`
+  } catch (error) {
+    throwIfNotProvisioned(error)
+  }
 }
 
 export async function getWatchlist(userId: string, watchlistId: string): Promise<Watchlist | null> {
   if (!process.env.DATABASE_URL) return null
   const sql = getSql()
-  const rows = await sql`
-    select id, name, iso, fuel_type, phase, mw_bucket, owner_company,
-           notify_email, last_emailed_at, created_at, updated_at
-    from watchlists
-    where id = ${watchlistId} and user_id = ${userId}
-    limit 1
-  `
-  const row = (rows as WatchlistRow[])[0]
-  return row ? mapWatchlist(row) : null
+  try {
+    const rows = await sql`
+      select id, name, iso, fuel_type, phase, mw_bucket, owner_company,
+             notify_email, last_emailed_at, created_at, updated_at
+      from watchlists
+      where id = ${watchlistId} and user_id = ${userId}
+      limit 1
+    `
+    const row = (rows as WatchlistRow[])[0]
+    return row ? mapWatchlist(row) : null
+  } catch (error) {
+    throwIfNotProvisioned(error)
+  }
 }
