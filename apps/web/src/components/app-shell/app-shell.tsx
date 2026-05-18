@@ -20,8 +20,8 @@ export function AppShell({ children, user }: AppShellProps) {
         Skip to content
       </a>
       <div className="flex flex-1">
-        <aside className="hidden w-56 shrink-0 border-r border-border md:block">
-          <Sidebar />
+        <aside className="hidden shrink-0 border-r border-border md:block">
+          <Sidebar className="transition-all duration-300" />
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex h-14 items-center justify-between border-b border-border px-4">

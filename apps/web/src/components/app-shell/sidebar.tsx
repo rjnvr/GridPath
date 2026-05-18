@@ -2,7 +2,8 @@
 
 import { Activity, BarChart3, Bookmark, LayoutDashboard, Search, Settings } from "lucide-react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useState } from "next/navigation"
+import { useEffect, useRef } from "react"
 
 import { LogoMark } from "@/components/brand/logo-mark"
 import { cn } from "@/lib/utils"
@@ -18,15 +19,43 @@ const NAV = [
 
 export function Sidebar() {
   const pathname = usePathname()
+  const [collapsed, setCollapsed] = useState(false)
+  const sidebarRef = useRef<HTMLElement | null>(null)
+
+  useEffect(() => {
+    const handleMouseEnter = () => setCollapsed(false)
+    const handleMouseLeave = () => setCollapsed(true)
+    const element = sidebarRef.current
+    if (element) {
+      element.addEventListener("mouseenter", handleMouseEnter)
+      element.addEventListener("mouseleave", handleMouseLeave)
+      return () => {
+        element.removeEventListener("mouseenter", handleMouseEnter)
+        element.removeEventListener("mouseleave", handleMouseLeave)
+      }
+    }
+  }, [])
+
   return (
-    <nav aria-label="Primary" className="flex h-full flex-col gap-1 p-3">
+    <nav
+      ref={sidebarRef}
+      aria-label="Primary"
+      className={cn(
+        "flex h-full flex-col gap-1 p-3 transition-all duration-200",
+        collapsed
+          ? "w-[80px]" /* collapsed width */
+          : "w-[240px]" /* expanded width */
+      )}
+    >
       <Link
         href="/dashboard"
         className="mb-4 flex items-center gap-2 px-2 py-1"
         aria-label="GridPath home"
       >
         <LogoMark className="h-6 w-6" />
-        <span className="text-sm font-semibold tracking-tight">GridPath</span>
+        {!collapsed && (
+          <span className="text-sm font-semibold tracking-tight">GridPath</span>
+        )}
       </Link>
       {NAV.map(({ href, label, icon: Icon }) => {
         const active = pathname === href || pathname.startsWith(`${href}/`)
@@ -43,7 +72,7 @@ export function Sidebar() {
             )}
           >
             <Icon className="h-4 w-4" />
-            {label}
+            {!collapsed && <span>{label}</span>}
           </Link>
         )
       })}

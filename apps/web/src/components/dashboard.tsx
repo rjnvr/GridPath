@@ -95,7 +95,6 @@ type EventFilterState = {
   timeWindow: string
 }
 
-type MapSize = "compact" | "balanced" | "expanded"
 type PanelMode = "projects" | "events"
 
 const columns: ColumnDef<GridProject>[] = [
@@ -327,10 +326,9 @@ function eventWithinWindow(event: QueueEvent, timeWindow: string): boolean {
   return elapsed <= 30 * 24 * 60 * 60 * 1000
 }
 
-function gridRowsForMapSize(size: MapSize): string {
-  if (size === "compact") return "minmax(220px, 32%) 1fr"
-  if (size === "expanded") return "minmax(460px, 72%) 1fr"
-  return "minmax(340px, 54%) 1fr"
+function gridRowsForMapSize(isFullscreen: boolean): string {
+  if (isFullscreen) return "1fr"
+  return "minmax(400px, 45%) 1fr"
 }
 
 function hasActiveFilters(filters: FilterState, searchQuery: string): boolean {
@@ -367,7 +365,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     timeWindow: "30d"
   })
   const [searchQuery, setSearchQuery] = useState("")
-  const [mapSize, setMapSize] = useState<MapSize>("balanced")
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const [sorting, setSorting] = useState<SortingState>([])
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 50 })
   const [selectedProject, setSelectedProject] = useState<GridProject | null>(null)
@@ -614,7 +612,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     }
     const resize = window.setTimeout(() => map.resize(), 220)
     return () => window.clearTimeout(resize)
-  }, [mapSize])
+  }, [isFullscreen])
 
   function clearFilters() {
     setSearchQuery("")
@@ -636,7 +634,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     <main className="min-h-[calc(100vh-3.5rem)] bg-background text-foreground">
       <section
         className="grid h-[calc(100vh-3.5rem)]"
-        style={{ gridTemplateRows: gridRowsForMapSize(mapSize) }}
+        style={{ gridTemplateRows: gridRowsForMapSize(isFullscreen) }}
       >
         <div className="relative border-b border-border">
           <div ref={mapContainerRef} className="absolute inset-0" />
@@ -650,36 +648,40 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
               {filteredProjects.length.toLocaleString()} visible projects
             </span>
           </div>
+          <div className="absolute left-4 top-[80px] flex flex-col items-start gap-2 text-sm text-muted-foreground">
+            <div className="flex flex-col items-start gap-1">
+              <div className="flex items-center gap-2 text-xs">
+                <div className="w-3 h-3 bg-[#facc15] rounded"></div>
+                <span>Solar</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs">
+                <div className="w-3 h-3 bg-[#60a5fa] rounded"></div>
+                <span>Wind</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs">
+                <div className="w-3 h-3 bg-[#c084fc] rounded"></div>
+                <span>Storage</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs">
+                <div className="w-3 h-3 bg-[#fb7185] rounded"></div>
+                <span>Gas</span>
+              </div>
+            </div>
+          </div>
           <div className="absolute right-4 top-4 flex items-center gap-1 rounded-md border border-border bg-card/95 p-1 shadow-xl backdrop-blur">
             <Button
               type="button"
-              variant={mapSize === "compact" ? "secondary" : "ghost"}
+              variant={isFullscreen ? "secondary" : "ghost"}
               size="sm"
-              onClick={() => setMapSize("compact")}
-              aria-label="Make map smaller"
-              title="Smaller map"
+              onClick={() => setIsFullscreen(!isFullscreen)}
+              aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+              title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
             >
-              <Minimize2 className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              variant={mapSize === "balanced" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setMapSize("balanced")}
-              aria-label="Use balanced map size"
-              title="Balanced map"
-            >
-              <Activity className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              variant={mapSize === "expanded" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setMapSize("expanded")}
-              aria-label="Expand map"
-              title="Expand map"
-            >
-              <Maximize2 className="h-4 w-4" />
+              {isFullscreen ? (
+                <Minimize2 className="h-4 w-4" />
+              ) : (
+                <Maximize2 className="h-4 w-4" />
+              )}
             </Button>
           </div>
           {initialData.projects.length === 0 ? (
