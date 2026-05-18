@@ -14,15 +14,30 @@ import httpx
 import pandas as pd
 
 from gridpath_ingestion.centroids import centroid_for_county
-from gridpath_ingestion.db import upsert_projects
-from gridpath_ingestion.discovery import discover_latest_ercot_gis_report
-from gridpath_ingestion.models import QueueProject
+from gridpath_ingestion.db import (
+    project_count_for_iso,
+    record_source_report_failure,
+    successful_source_report_urls,
+    upsert_projects,
+)
+from gridpath_ingestion.discovery import (
+    DiscoveredReport,
+    discover_latest_ercot_gis_report,
+    list_ercot_gis_reports,
+)
+from gridpath_ingestion.models import QueueProject, SourceReport
 
 EXPECTED_COLUMNS = {
     "INR",
     "Project Name",
     "Fuel",
     "County",
+}
+
+PROJECT_DETAIL_SHEETS = {
+    "Project Details",
+    "Project Details - Large Gen",
+    "Project Details - Small Gen",
 }
 
 COLUMN_ALIASES = {
@@ -35,6 +50,7 @@ COLUMN_ALIASES = {
     "Capacity (MW)": "mw_requested",
     "Status": "current_status",
     "GIM Study Phase": "current_status",
+    "GINR Study Phase": "current_status",
     "Model Ready Date": "filed_date",
     "Interconnection Agreement Signed Date": "ia_signed_date",
     "IA Signed Date": "ia_signed_date",
@@ -185,7 +201,7 @@ def parse_workbook(path: Path, source_url: str | None = None) -> list[QueueProje
     detail_sheets = [
         sheet
         for sheet in workbook.sheet_names
-        if sheet in {"Project Details - Large Gen", "Project Details - Small Gen"}
+        if sheet in PROJECT_DETAIL_SHEETS
     ]
     if not detail_sheets:
         raise ValueError("ERCOT schema drift detected. Missing project detail sheets.")
@@ -210,9 +226,107 @@ def download_report(url: str) -> Path:
         return Path(handle.name)
 
 
+def source_report_from_discovered(
+    report: DiscoveredReport,
+    source_url: str | None = None,
+) -> SourceReport:
+    return SourceReport(
+        iso="ERCOT",
+        source_url=source_url or report.url,
+        source_name=report.name,
+        published_at=report.published_at,
+        report_date=report.report_date or date.today(),
+    )
+
+
+def source_report_from_file(path: Path, source_url: str | None = None) -> SourceReport:
+    return SourceReport(
+        iso="ERCOT",
+        source_url=source_url or path.resolve().as_uri(),
+        source_name=path.name,
+        report_date=date.today(),
+    )
+
+
+def select_reports_for_backfill(
+    reports: list[DiscoveredReport],
+    successful_urls: set[str],
+    force: bool,
+) -> list[DiscoveredReport]:
+    if force:
+        return reports
+    return [report for report in reports if report.url not in successful_urls]
+
+
+def successful_report_prefix_length(
+    reports: list[DiscoveredReport],
+    successful_urls: set[str],
+) -> int:
+    prefix_length = 0
+    for report in reports:
+        if report.url not in successful_urls:
+            break
+        prefix_length += 1
+    return prefix_length
+
+
+def ingest_report(
+    report: DiscoveredReport,
+    database_url: str | None,
+    dry_run: bool,
+    force: bool,
+    skip_successful: bool,
+    workbook: Path | None = None,
+) -> dict[str, int | bool | str | None]:
+    source_report = source_report_from_discovered(report)
+    try:
+        resolved_workbook = workbook or download_report(report.url)
+        projects = parse_workbook(resolved_workbook, report.url)
+    except Exception as exc:
+        if database_url and not dry_run:
+            record_source_report_failure(database_url, source_report, str(exc))
+        raise
+
+    if dry_run:
+        return {
+            "iso": "ERCOT",
+            "source_url": report.url,
+            "projects_seen": len(projects),
+            "dry_run": True,
+        }
+
+    if not database_url:
+        raise SystemExit("Set DIRECT_DATABASE_URL or DATABASE_URL.")
+
+    try:
+        return upsert_projects(
+            projects,
+            database_url,
+            source_report=source_report,
+            snapshot_date=source_report.report_date,
+            observed_at=source_report.report_date,
+            skip_successful_source_report=skip_successful,
+            force_source_report=force,
+        )
+    except Exception as exc:
+        record_source_report_failure(database_url, source_report, str(exc))
+        raise
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Ingest ERCOT GIS queue data into Neon Postgres.")
     parser.add_argument("--file", type=Path, help="Local ERCOT GIS Excel file")
+    parser.add_argument(
+        "--backfill",
+        action="store_true",
+        help="Process official ERCOT GIS reports oldest-to-newest, skipping successful reports.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Reprocess source reports even if they already succeeded.",
+    )
+    parser.add_argument("--limit", type=int, help="Limit backfill report count for smoke tests")
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -220,8 +334,60 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    database_url = os.environ.get("DIRECT_DATABASE_URL") or os.environ.get("DATABASE_URL")
+
+    if args.backfill:
+        reports = list_ercot_gis_reports()
+        successful_urls = set()
+        if database_url and not args.dry_run:
+            successful_urls = successful_source_report_urls(database_url, "ERCOT")
+            prefix_length = successful_report_prefix_length(reports, successful_urls)
+            has_non_chronological_success = any(
+                report.url in successful_urls for report in reports[prefix_length:]
+            )
+            if not args.force and (
+                (project_count_for_iso(database_url, "ERCOT") > 0 and prefix_length == 0)
+                or has_non_chronological_success
+            ):
+                raise SystemExit(
+                    "ERCOT backfill must start from an empty ERCOT project set or resume a "
+                    "chronological backfill. Use --force only for manual repair."
+                )
+        reports_to_ingest = select_reports_for_backfill(reports, successful_urls, args.force)
+        if args.limit:
+            reports_to_ingest = reports_to_ingest[: args.limit]
+        aggregate = {
+            "event": "ercot_backfill",
+            "reports_seen": len(reports),
+            "reports_selected": len(reports_to_ingest),
+            "reports_processed": 0,
+            "projects_seen": 0,
+            "events_written": 0,
+            "dry_run": args.dry_run,
+        }
+        for report in reports_to_ingest:
+            stats = ingest_report(
+                report,
+                database_url,
+                args.dry_run,
+                args.force,
+                skip_successful=True,
+            )
+            aggregate["reports_processed"] += 1
+            aggregate["projects_seen"] += int(stats.get("projects_seen", 0))
+            aggregate["events_written"] += int(stats.get("events_written", 0))
+            print(
+                json.dumps(
+                    {"event": "processed_report", "report": report.name, **stats},
+                    sort_keys=True,
+                )
+            )
+        print(json.dumps(aggregate, sort_keys=True))
+        return 0
+
     source_url = os.environ.get("ERCOT_GIS_URL")
     workbook = args.file
+    report: DiscoveredReport | None = None
     if not workbook:
         if not source_url:
             report = discover_latest_ercot_gis_report()
@@ -237,17 +403,42 @@ def main(argv: list[str] | None = None) -> int:
                     sort_keys=True,
                 )
             )
-        workbook = download_report(source_url)
+        if report is None:
+            report = DiscoveredReport(
+                url=source_url,
+                name="ERCOT GIS Report",
+                report_date=date.today(),
+            )
+        stats = ingest_report(
+            report,
+            database_url,
+            args.dry_run,
+            args.force,
+            skip_successful=False,
+        )
+        print(json.dumps(stats, sort_keys=True))
+        return 0
 
+    source_report = source_report_from_file(workbook, source_url)
     projects = parse_workbook(workbook, source_url)
     if args.dry_run:
         print(json.dumps({"projects_seen": len(projects), "dry_run": True}))
         return 0
 
-    database_url = os.environ.get("DIRECT_DATABASE_URL") or os.environ.get("DATABASE_URL")
     if not database_url:
         raise SystemExit("Set DIRECT_DATABASE_URL or DATABASE_URL.")
-    stats = upsert_projects(projects, database_url)
+    try:
+        stats = upsert_projects(
+            projects,
+            database_url,
+            source_report=source_report,
+            snapshot_date=source_report.report_date,
+            observed_at=source_report.report_date,
+            force_source_report=args.force,
+        )
+    except Exception as exc:
+        record_source_report_failure(database_url, source_report, str(exc))
+        raise
     print(json.dumps(stats, sort_keys=True))
     return 0
 

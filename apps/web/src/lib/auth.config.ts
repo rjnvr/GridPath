@@ -3,12 +3,13 @@ import type { NextAuthConfig } from "next-auth"
 // Edge-safe config: no adapter, no Node-only providers. Used by middleware to
 // gate routes via the `authorized` callback, and spread into the full config
 // in `auth.ts` for the API handler / server components.
-const PROTECTED_PREFIXES = ["/dashboard", "/health", "/account"]
+const PROTECTED_PREFIXES = ["/dashboard", "/health", "/account", "/watchlists"]
 
 export default {
   providers: [],
   pages: {
     signIn: "/login",
+    verifyRequest: "/verify-request",
     error: "/error"
   },
   callbacks: {

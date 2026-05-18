@@ -8,6 +8,42 @@ export type ProjectChange = {
   newValue: string | null
 }
 
+export type QueueEventType =
+  | "new_project"
+  | "phase_advanced"
+  | "phase_regressed"
+  | "ia_executed"
+  | "energized"
+  | "withdrawn"
+  | "mw_increase"
+  | "mw_decrease"
+  | "owner_changed"
+  | "milestone_date_changed"
+  | "status_changed"
+  | "project_field_changed"
+
+export type QueueEventSeverity = "info" | "watch" | "important" | "critical"
+
+export type QueueEvent = {
+  id: string
+  projectId: string
+  iso: string
+  queueId: string
+  projectName: string | null
+  sourceUrl: string | null
+  sourceName: string | null
+  eventType: QueueEventType
+  severity: QueueEventSeverity
+  title: string
+  description: string
+  fieldName: string | null
+  oldValue: string | null
+  newValue: string | null
+  deltaMw: number | null
+  eventAt: string
+  createdAt: string
+}
+
 export type GridProject = {
   id: string
   iso: "ERCOT" | string
@@ -30,6 +66,7 @@ export type GridProject = {
   firstSeenAt: string
   lastUpdatedAt: string
   changes: ProjectChange[]
+  events: QueueEvent[]
 }
 
 export type Substation = {
@@ -45,6 +82,7 @@ export type Substation = {
 export type DashboardData = {
   projects: GridProject[]
   substations: Substation[]
+  recentEvents: QueueEvent[]
   latestSnapshotAt: string | null
 }
 
@@ -58,6 +96,24 @@ export type IsoHealth = {
 export type HealthBreakdown = {
   iso: string
   label: string
+  count: number
+}
+
+export type SourceReportHealth = {
+  id: string
+  iso: string
+  sourceUrl: string
+  sourceName: string | null
+  publishedAt: string | null
+  reportDate: string | null
+  status: "running" | "success" | "failed" | string
+  errorMessage: string | null
+  startedAt: string | null
+  completedAt: string | null
+}
+
+export type EventSeverityCount = {
+  severity: QueueEventSeverity | string
   count: number
 }
 
@@ -78,4 +134,25 @@ export type HealthData = {
   phaseCounts: HealthBreakdown[]
   fuelCounts: HealthBreakdown[]
   recentChanges: RecentChange[]
+  latestSourceReports: SourceReportHealth[]
+  failedSourceReports: SourceReportHealth[]
+  eventSeverityCounts: EventSeverityCount[]
+}
+
+export type WatchlistFilter = {
+  iso: string | null
+  fuelType: string | null
+  phase: string | null
+  mwBucket: string | null
+  ownerCompany: string | null
+}
+
+export type Watchlist = {
+  id: string
+  name: string
+  filter: WatchlistFilter
+  notifyEmail: boolean
+  lastEmailedAt: string | null
+  createdAt: string
+  updatedAt: string
 }

@@ -14,9 +14,9 @@ import httpx
 import pandas as pd
 
 from gridpath_ingestion.centroids import centroid_for_county
-from gridpath_ingestion.db import upsert_projects
-from gridpath_ingestion.discovery import discover_latest_caiso_public_queue_report
-from gridpath_ingestion.models import QueueProject
+from gridpath_ingestion.db import record_source_report_failure, upsert_projects
+from gridpath_ingestion.discovery import DiscoveredReport, discover_latest_caiso_public_queue_report
+from gridpath_ingestion.models import QueueProject, SourceReport
 
 PROJECT_SHEETS = {
     "Grid GenerationQueue",
@@ -203,11 +203,79 @@ def download_report(url: str) -> Path:
         return Path(handle.name)
 
 
+def source_report_from_discovered(
+    report: DiscoveredReport,
+    source_url: str | None = None,
+) -> SourceReport:
+    return SourceReport(
+        iso="CAISO",
+        source_url=source_url or report.url,
+        source_name=report.name,
+        published_at=report.published_at,
+        report_date=report.report_date or date.today(),
+    )
+
+
+def source_report_from_file(path: Path, source_url: str | None = None) -> SourceReport:
+    return SourceReport(
+        iso="CAISO",
+        source_url=source_url or path.resolve().as_uri(),
+        source_name=path.name,
+        report_date=date.today(),
+    )
+
+
+def ingest_report(
+    report: DiscoveredReport,
+    database_url: str | None,
+    dry_run: bool,
+    force: bool,
+    workbook: Path | None = None,
+) -> dict[str, int | bool | str | None]:
+    source_report = source_report_from_discovered(report)
+    try:
+        resolved_workbook = workbook or download_report(report.url)
+        projects = parse_workbook(resolved_workbook, report.url)
+    except Exception as exc:
+        if database_url and not dry_run:
+            record_source_report_failure(database_url, source_report, str(exc))
+        raise
+
+    if dry_run:
+        return {
+            "iso": "CAISO",
+            "source_url": report.url,
+            "projects_seen": len(projects),
+            "dry_run": True,
+        }
+
+    if not database_url:
+        raise SystemExit("Set DIRECT_DATABASE_URL or DATABASE_URL.")
+
+    try:
+        return upsert_projects(
+            projects,
+            database_url,
+            source_report=source_report,
+            snapshot_date=source_report.report_date,
+            observed_at=source_report.report_date,
+            force_source_report=force,
+        )
+    except Exception as exc:
+        record_source_report_failure(database_url, source_report, str(exc))
+        raise
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Ingest CAISO public queue data into Neon Postgres."
     )
     parser.add_argument("--file", type=Path, help="Local CAISO public queue Excel file")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Reprocess source report metadata even if it already exists.",
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -217,6 +285,8 @@ def main(argv: list[str] | None = None) -> int:
 
     source_url = os.environ.get("CAISO_QUEUE_URL")
     workbook = args.file
+    database_url = os.environ.get("DIRECT_DATABASE_URL") or os.environ.get("DATABASE_URL")
+    report: DiscoveredReport | None = None
     if not workbook:
         if not source_url:
             report = discover_latest_caiso_public_queue_report()
@@ -231,17 +301,36 @@ def main(argv: list[str] | None = None) -> int:
                     sort_keys=True,
                 )
             )
-        workbook = download_report(source_url)
+        if report is None:
+            report = DiscoveredReport(
+                url=source_url,
+                name="CAISO Public Queue Report",
+                report_date=date.today(),
+            )
+        stats = ingest_report(report, database_url, args.dry_run, args.force)
+        print(json.dumps(stats, sort_keys=True))
+        return 0
 
+    source_report = source_report_from_file(workbook, source_url)
     projects = parse_workbook(workbook, source_url)
     if args.dry_run:
         print(json.dumps({"projects_seen": len(projects), "dry_run": True}))
         return 0
 
-    database_url = os.environ.get("DIRECT_DATABASE_URL") or os.environ.get("DATABASE_URL")
     if not database_url:
         raise SystemExit("Set DIRECT_DATABASE_URL or DATABASE_URL.")
-    stats = upsert_projects(projects, database_url)
+    try:
+        stats = upsert_projects(
+            projects,
+            database_url,
+            source_report=source_report,
+            snapshot_date=source_report.report_date,
+            observed_at=source_report.report_date,
+            force_source_report=args.force,
+        )
+    except Exception as exc:
+        record_source_report_failure(database_url, source_report, str(exc))
+        raise
     print(json.dumps(stats, sort_keys=True))
     return 0
 

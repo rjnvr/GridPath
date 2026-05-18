@@ -73,3 +73,35 @@ def test_parser_skips_rows_without_queue_id(tmp_path: Path) -> None:
         ).to_excel(writer, sheet_name="Project Details - Large Gen", index=False)
 
     assert parse_workbook(workbook) == []
+
+
+def test_parser_accepts_legacy_project_details_sheet(tmp_path: Path) -> None:
+    workbook = tmp_path / "ercot-legacy.xlsx"
+    with pd.ExcelWriter(workbook) as writer:
+        pd.DataFrame({"Notes": ["ignore"] * 23}).to_excel(
+            writer,
+            sheet_name="Project Details",
+            index=False,
+            header=False,
+        )
+        pd.DataFrame(
+            [
+                {
+                    "INR": "19INR001",
+                    "Project Name": "Legacy Wind",
+                    "Fuel": "Wind",
+                    "County": "Nueces",
+                    "Capacity (MW)": "226",
+                    "GINR Study Phase": "FIS",
+                    "IA Signed": "2019-04-01",
+                    "Interconnecting Entity": "Legacy Energy",
+                }
+            ],
+        ).to_excel(writer, sheet_name="Project Details", index=False, startrow=23)
+
+    projects = parse_workbook(workbook)
+
+    assert len(projects) == 1
+    assert projects[0].queue_id == "19INR001"
+    assert projects[0].current_phase == "System Impact"
+    assert projects[0].ia_signed_date is not None

@@ -1,4 +1,4 @@
-name: ERCOT snapshot
+name: Queue snapshot
 
 on:
   workflow_dispatch:
@@ -28,6 +28,11 @@ jobs:
           DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python -m gridpath_ingestion.caiso
+      - name: Verify ingestion freshness
+        env:
+          DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -m gridpath_ingestion.health
       - name: Notify Slack on failure
         if: failure() && secrets.SLACK_WEBHOOK_URL != ''
         env:
@@ -38,7 +43,7 @@ jobs:
           import os
           import urllib.request
 
-          body = json.dumps({"text": "GridPath ERCOT snapshot failed."}).encode()
+          body = json.dumps({"text": "GridPath queue snapshot failed."}).encode()
           request = urllib.request.Request(
               os.environ["SLACK_WEBHOOK_URL"],
               data=body,

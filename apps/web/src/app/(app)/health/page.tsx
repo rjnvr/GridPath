@@ -9,6 +9,12 @@ function formatDateTime(value: string | null) {
   return new Date(value).toLocaleString()
 }
 
+function statusClass(status: string) {
+  if (status === "success") return "bg-emerald-500/15 text-emerald-300"
+  if (status === "failed") return "bg-red-500/15 text-red-300"
+  return "bg-amber-500/15 text-amber-200"
+}
+
 export default async function HealthPage() {
   const health = await getHealthData()
 
@@ -43,6 +49,117 @@ export default async function HealthPage() {
           </div>
         ))}
       </section>
+
+      <section className="grid gap-4 lg:grid-cols-[1.4fr_0.6fr]">
+        <section className="rounded-md border border-border bg-card">
+          <div className="border-b border-border px-4 py-3">
+            <h2 className="font-medium">Latest Source Reports</h2>
+          </div>
+          <div className="overflow-auto">
+            <table className="w-full border-collapse text-left text-sm">
+              <thead className="text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="border-b border-border px-4 py-3">ISO</th>
+                  <th className="border-b border-border px-4 py-3">Report</th>
+                  <th className="border-b border-border px-4 py-3">Report Date</th>
+                  <th className="border-b border-border px-4 py-3">Completed</th>
+                  <th className="border-b border-border px-4 py-3">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {health.latestSourceReports.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-6 text-muted-foreground">
+                      No source reports recorded yet.
+                    </td>
+                  </tr>
+                ) : (
+                  health.latestSourceReports.map((report) => (
+                    <tr key={report.id} className="border-b border-border/70">
+                      <td className="px-4 py-3">{report.iso}</td>
+                      <td className="max-w-[340px] truncate px-4 py-3">
+                        {report.sourceUrl ? (
+                          <a
+                            href={report.sourceUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="underline-offset-4 hover:underline"
+                          >
+                            {report.sourceName ?? report.sourceUrl}
+                          </a>
+                        ) : (
+                          report.sourceName ?? "—"
+                        )}
+                      </td>
+                      <td className="px-4 py-3">{report.reportDate ?? "—"}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                        {formatDateTime(report.completedAt)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`rounded px-2 py-1 text-xs ${statusClass(report.status)}`}>
+                          {report.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="rounded-md border border-border bg-card">
+          <div className="border-b border-border px-4 py-3">
+            <h2 className="font-medium">Events This Week</h2>
+          </div>
+          <div className="space-y-3 p-4">
+            {health.eventSeverityCounts.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No classified events in the last 7 days.</p>
+            ) : (
+              health.eventSeverityCounts.map((row) => (
+                <div key={row.severity} className="flex items-center justify-between text-sm">
+                  <span className="capitalize text-muted-foreground">{row.severity}</span>
+                  <span className="font-mono">{row.count.toLocaleString()}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+      </section>
+
+      {health.failedSourceReports.length > 0 ? (
+        <section className="rounded-md border border-red-500/30 bg-red-500/10">
+          <div className="border-b border-red-500/20 px-4 py-3">
+            <h2 className="font-medium text-red-100">Recent Source Report Failures</h2>
+          </div>
+          <div className="overflow-auto">
+            <table className="w-full border-collapse text-left text-sm">
+              <thead className="text-xs uppercase text-red-100/70">
+                <tr>
+                  <th className="border-b border-red-500/20 px-4 py-3">Time</th>
+                  <th className="border-b border-red-500/20 px-4 py-3">ISO</th>
+                  <th className="border-b border-red-500/20 px-4 py-3">Report</th>
+                  <th className="border-b border-red-500/20 px-4 py-3">Error</th>
+                </tr>
+              </thead>
+              <tbody>
+                {health.failedSourceReports.map((report) => (
+                  <tr key={report.id} className="border-b border-red-500/20">
+                    <td className="px-4 py-3 font-mono text-xs text-red-100/70">
+                      {formatDateTime(report.completedAt)}
+                    </td>
+                    <td className="px-4 py-3">{report.iso}</td>
+                    <td className="max-w-[260px] truncate px-4 py-3">
+                      {report.sourceName ?? report.sourceUrl}
+                    </td>
+                    <td className="px-4 py-3 text-red-100/80">{report.errorMessage ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
 
       <section className="grid gap-4 lg:grid-cols-2">
         <BreakdownTable title="Phase Counts" rows={health.phaseCounts} />

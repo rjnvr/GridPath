@@ -5,7 +5,23 @@ import { Button } from "@/components/ui/button"
 
 import { GridTopology } from "./grid-topology"
 
-export function Hero() {
+interface HeroProps {
+  latestSnapshotAt: string | null
+}
+
+function relativeFromNow(value: string | null) {
+  if (!value) return null
+  const ms = Date.now() - new Date(value).getTime()
+  const minutes = Math.round(ms / 60_000)
+  if (minutes < 60) return `${Math.max(1, minutes)} min ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 36) return `${hours}h ago`
+  const days = Math.round(hours / 24)
+  return `${days}d ago`
+}
+
+export function Hero({ latestSnapshotAt }: HeroProps) {
+  const freshness = relativeFromNow(latestSnapshotAt)
   return (
     <section className="relative overflow-hidden border-b border-border bg-[linear-gradient(180deg,hsl(var(--background)),hsl(214_32%_7%))]">
       <div
@@ -33,56 +49,35 @@ export function Hero() {
       <div className="relative mx-auto max-w-6xl px-6 py-20 md:py-24">
         <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
           <div>
-            <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
-              </span>
-              ERCOT &amp; CAISO live · updated daily
-            </span>
-            <h1 className="mt-6 text-4xl font-semibold tracking-tight md:text-5xl">
-              Know every project in the interconnection queue.
+            {freshness ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+                </span>
+                <span className="font-mono uppercase tracking-wide">
+                  Live · last snapshot {freshness}
+                </span>
+              </div>
+            ) : null}
+            <h1 className="mt-6 max-w-4xl text-balance text-5xl font-semibold tracking-tight md:text-7xl">
+              Track every project in America&apos;s interconnection queue.
             </h1>
-            <p className="mt-5 text-lg text-muted-foreground md:text-xl">
-              GridPath turns ERCOT and CAISO queue reports into a queryable map and a field-level
-              change history. See what&apos;s moving, what&apos;s stalled, and what&apos;s new,
-              without copying another spreadsheet.
+            <p className="mt-6 max-w-2xl text-balance text-lg text-muted-foreground md:text-xl">
+              GridPath ingests the ERCOT and CAISO queue reports daily, normalizes them into one
+              schema, and records every field that changes, so you can stop diffing spreadsheets.
             </p>
-            <div className="mt-8 flex flex-wrap items-center gap-3">
+            <div className="mt-10 flex flex-wrap items-center gap-3">
               <Button asChild size="lg">
                 <Link href="/signup">
                   Start free
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </Button>
-              <Button asChild size="lg" variant="outline">
+              <Button asChild size="lg" variant="ghost">
                 <Link href="/login">Sign in</Link>
               </Button>
             </div>
-            <dl className="mt-10 grid grid-cols-3 gap-4 border-t border-border pt-6 text-sm">
-              <div>
-                <dt className="text-xs uppercase tracking-wider text-muted-foreground">
-                  Projects tracked
-                </dt>
-                <dd className="mt-1 font-mono text-lg font-semibold tracking-tight">
-                  12,400+
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs uppercase tracking-wider text-muted-foreground">
-                  ISOs covered
-                </dt>
-                <dd className="mt-1 font-mono text-lg font-semibold tracking-tight">2</dd>
-              </div>
-              <div>
-                <dt className="text-xs uppercase tracking-wider text-muted-foreground">
-                  Tracked changes
-                </dt>
-                <dd className="mt-1 font-mono text-lg font-semibold tracking-tight">
-                  every field
-                </dd>
-              </div>
-            </dl>
           </div>
           <div className="relative aspect-[6/5] w-full max-w-[640px] justify-self-center rounded-xl bg-primary/5 p-1 shadow-[0_24px_80px_rgba(45,212,191,0.10)] lg:justify-self-end">
             <GridTopology />
