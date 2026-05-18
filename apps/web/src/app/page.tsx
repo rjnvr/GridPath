@@ -1,6 +1,7 @@
 import { DataFreshnessBand } from "@/components/marketing/data-freshness-band"
 import { FeatureGrid } from "@/components/marketing/feature-grid"
 import { Hero } from "@/components/marketing/hero"
+import { InterconnectFlow } from "@/components/marketing/interconnect-flow"
 import { MarketingFooter } from "@/components/marketing/marketing-footer"
 import { MarketingHeader } from "@/components/marketing/marketing-header"
 
@@ -12,6 +13,7 @@ export default function HomePage() {
       <MarketingHeader />
       <Hero />
       <FeatureGrid />
+      <InterconnectFlow />
       <DataFreshnessBand />
       <MarketingFooter />
     </div>
