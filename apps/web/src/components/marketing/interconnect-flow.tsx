@@ -23,13 +23,13 @@ const ARRIVALS = [
 function fuelColor(fuel: string) {
   switch (fuel) {
     case "Solar":
-      return "bg-amber-400/15 text-amber-300 border-amber-400/30"
+      return "bg-fuel-solar/15 text-fuel-solar border-fuel-solar/30"
     case "Wind":
-      return "bg-sky-400/15 text-sky-300 border-sky-400/30"
+      return "bg-fuel-wind/15 text-fuel-wind border-fuel-wind/30"
     case "BESS":
-      return "bg-primary/15 text-primary border-primary/30"
+      return "bg-fuel-storage/15 text-fuel-storage border-fuel-storage/30"
     case "Load":
-      return "bg-violet-400/15 text-violet-300 border-violet-400/30"
+      return "bg-muted text-muted-foreground border-border"
     default:
       return "bg-muted text-muted-foreground border-border"
   }
@@ -58,20 +58,18 @@ export function InterconnectFlow() {
   }, [feedOffset])
 
   return (
-    <section className="relative overflow-hidden border-b border-border bg-[linear-gradient(180deg,hsl(214_32%_7%),hsl(var(--background)))]">
+    <section className="relative overflow-hidden border-b border-border bg-background">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-[0.12]"
+        className="pointer-events-none absolute inset-x-0 top-0 h-40"
         style={{
-          backgroundImage:
-            "linear-gradient(120deg, transparent 0 46%, hsl(173 80% 50% / 0.32) 46% 46.4%, transparent 46.4% 100%), linear-gradient(hsl(var(--muted-foreground)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--muted-foreground)) 1px, transparent 1px)",
-          backgroundSize: "360px 180px, 58px 58px, 58px 58px",
-          maskImage: "linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%)"
+          background:
+            "linear-gradient(180deg, hsl(var(--primary) / 0.04), transparent)"
         }}
       />
       <div
         aria-hidden
-        className="pointer-events-none absolute left-0 top-0 h-px w-full bg-gradient-to-r from-transparent via-primary/50 to-transparent"
+        className="pointer-events-none absolute left-0 top-0 h-px w-full bg-gradient-to-r from-transparent via-primary/40 to-transparent"
       />
       <div className="relative mx-auto max-w-6xl px-6 py-20">
         <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
@@ -133,7 +131,7 @@ export function InterconnectFlow() {
             </ol>
           </div>
 
-          <div className="space-y-4 rounded-xl bg-card/20 p-1 shadow-[0_24px_90px_rgba(45,212,191,0.08)]">
+          <div className="space-y-4 rounded-md p-1 shadow-[0_24px_90px_hsl(var(--primary)/0.06)]">
             <IsoDataCenter />
             <FeedPanel feed={feed} />
           </div>
@@ -146,16 +144,7 @@ export function InterconnectFlow() {
 /** Isometric data-center campus with animated power/data transfer. */
 function IsoDataCenter() {
   return (
-    <div className="relative isolate min-h-[420px] overflow-hidden rounded-xl border border-border bg-card/40 shadow-[inset_0_0_80px_rgba(45,212,191,0.05)]">
-      <div
-        aria-hidden
-        className="absolute inset-0 opacity-[0.12]"
-        style={{
-          backgroundImage:
-            "linear-gradient(hsl(var(--muted-foreground)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--muted-foreground)) 1px, transparent 1px)",
-          backgroundSize: "44px 44px"
-        }}
-      />
+    <div className="relative isolate min-h-[420px] overflow-hidden rounded-md border border-border bg-card/60 shadow-[inset_0_0_80px_hsl(var(--primary)/0.04)]">
       <div
         className="relative h-[420px]"
         role="img"
@@ -164,21 +153,21 @@ function IsoDataCenter() {
         <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 600 420" aria-hidden>
           <defs>
             <linearGradient id="powerLine" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="hsl(173 80% 60% / 0)" />
-              <stop offset="50%" stopColor="hsl(173 80% 60% / 0.9)" />
-              <stop offset="100%" stopColor="hsl(173 80% 60% / 0)" />
+              <stop offset="0%" stopColor="hsl(var(--primary) / 0)" />
+              <stop offset="50%" stopColor="hsl(var(--primary) / 0.9)" />
+              <stop offset="100%" stopColor="hsl(var(--primary) / 0)" />
             </linearGradient>
             <linearGradient id="dcRoof" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="hsl(214 30% 24%)" />
-              <stop offset="100%" stopColor="hsl(214 32% 12%)" />
+              <stop offset="0%" stopColor="hsl(0 0% 22%)" />
+              <stop offset="100%" stopColor="hsl(0 0% 12%)" />
             </linearGradient>
             <linearGradient id="dcFront" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="hsl(214 30% 16%)" />
-              <stop offset="100%" stopColor="hsl(214 34% 7%)" />
+              <stop offset="0%" stopColor="hsl(0 0% 16%)" />
+              <stop offset="100%" stopColor="hsl(0 0% 7%)" />
             </linearGradient>
             <linearGradient id="dcSide" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="hsl(214 30% 11%)" />
-              <stop offset="100%" stopColor="hsl(214 34% 5%)" />
+              <stop offset="0%" stopColor="hsl(0 0% 11%)" />
+              <stop offset="100%" stopColor="hsl(0 0% 5%)" />
             </linearGradient>
           </defs>
           <path
@@ -222,7 +211,7 @@ function IsoDataCenter() {
             strokeLinecap="round"
           />
           {[0, 0.9, 1.8].map((delay) => (
-            <circle key={delay} r="4" fill="hsl(173 80% 60%)">
+            <circle key={delay} r="4" fill="hsl(var(--primary))">
               <animateMotion dur="3s" begin={`${delay}s`} repeatCount="indefinite">
                 <mpath href="#packetLaneTop" />
               </animateMotion>
@@ -230,7 +219,7 @@ function IsoDataCenter() {
             </circle>
           ))}
           {[0.45, 1.35, 2.25].map((delay) => (
-            <circle key={delay} r="3" fill="hsl(198 93% 62%)">
+            <circle key={delay} r="3" fill="hsl(var(--fuel-wind))">
               <animateMotion dur="3.2s" begin={`${delay}s`} repeatCount="indefinite">
                 <mpath href="#packetLaneBottom" />
               </animateMotion>
@@ -245,9 +234,9 @@ function IsoDataCenter() {
           </p>
           <div className="mt-3 space-y-2">
             {[
-              ["612 MW", "Wind", "bg-sky-400"],
-              ["480 MW", "Solar", "bg-amber-400"],
-              ["320 MW", "BESS", "bg-primary"]
+              ["612 MW", "Wind", "bg-fuel-wind"],
+              ["480 MW", "Solar", "bg-fuel-solar"],
+              ["320 MW", "BESS", "bg-fuel-storage"]
             ].map(([mw, fuel, color]) => (
               <div key={fuel} className="flex items-center justify-between rounded-md border border-border/70 bg-card/70 px-2 py-1.5">
                 <span className="flex items-center gap-2 font-mono text-[11px] text-foreground">
@@ -264,14 +253,14 @@ function IsoDataCenter() {
           className="absolute left-[168px] top-[184px]"
           label="West Campus"
           capacity="640 MW"
-          accent="hsl(198 93% 60%)"
+          accent="hsl(var(--fuel-wind))"
         />
 
         <DataCenterModel
           className="absolute right-[8px] top-[184px]"
           label="Houston Hyperscale"
           capacity="1.82 GW"
-          accent="hsl(173 80% 55%)"
+          accent="hsl(var(--primary))"
           active
         />
       </div>
@@ -334,7 +323,7 @@ function DataCenterModel({
         className="h-[125px] w-[154px] drop-shadow-2xl"
         aria-hidden
       >
-        <ellipse cx="96" cy="130" rx="78" ry="15" fill="hsl(173 80% 40% / 0.1)" />
+        <ellipse cx="96" cy="130" rx="78" ry="15" fill="hsl(var(--primary) / 0.1)" />
         <polygon
           points="18,46 94,14 172,48 96,82"
           fill="url(#dcRoof)"
@@ -361,7 +350,7 @@ function DataCenterModel({
             <path
               key={window}
               d={`M ${x1} ${y1} L ${x2} ${y2}`}
-              stroke={activeWindow ? accent : "hsl(214 24% 30%)"}
+              stroke={activeWindow ? accent : "hsl(0 0% 24%)"}
               strokeWidth="4"
               strokeLinecap="round"
               opacity={activeWindow ? 0.9 : 0.65}
@@ -381,7 +370,7 @@ function DataCenterModel({
           <path
             key={row}
             d={`M ${x1} ${y1} L ${x2} ${y2}`}
-            stroke={row === 1 ? accent : "hsl(214 24% 28%)"}
+            stroke={row === 1 ? accent : "hsl(0 0% 22%)"}
             strokeWidth="3"
             strokeLinecap="round"
             opacity={row === 1 ? 0.75 : 0.7}

@@ -77,17 +77,7 @@ export function GridTopology() {
   const selectedNode = NODE_BY_ID.get(selectedNodeId) ?? NODES[0]
 
   return (
-    <div className="relative isolate overflow-hidden rounded-xl border border-border bg-card/40 shadow-[inset_0_0_60px_rgba(45,212,191,0.06)]">
-      {/* Subtle dot grid background */}
-      <div
-        aria-hidden
-        className="absolute inset-0 opacity-[0.18]"
-        style={{
-          backgroundImage:
-            "radial-gradient(hsl(var(--muted-foreground)) 1px, transparent 1px)",
-          backgroundSize: "22px 22px"
-        }}
-      />
+    <div className="relative isolate overflow-hidden rounded-md border border-border bg-card/60 shadow-[inset_0_0_60px_hsl(var(--primary)/0.04)]">
       <svg
         viewBox="0 0 600 420"
         className="relative h-full w-full"
@@ -96,16 +86,16 @@ export function GridTopology() {
       >
         <defs>
           <radialGradient id="caisoBlob" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="hsl(173 80% 50% / 0.18)" />
-            <stop offset="100%" stopColor="hsl(173 80% 50% / 0)" />
+            <stop offset="0%" stopColor="hsl(var(--primary) / 0.16)" />
+            <stop offset="100%" stopColor="hsl(var(--primary) / 0)" />
           </radialGradient>
           <radialGradient id="ercotBlob" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="hsl(38 92% 60% / 0.16)" />
-            <stop offset="100%" stopColor="hsl(38 92% 60% / 0)" />
+            <stop offset="0%" stopColor="hsl(var(--fuel-solar) / 0.14)" />
+            <stop offset="100%" stopColor="hsl(var(--fuel-solar) / 0)" />
           </radialGradient>
           <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
             <stop offset="0%" stopColor="hsl(var(--border))" />
-            <stop offset="50%" stopColor="hsl(173 80% 50% / 0.65)" />
+            <stop offset="50%" stopColor="hsl(var(--primary) / 0.65)" />
             <stop offset="100%" stopColor="hsl(var(--border))" />
           </linearGradient>
           <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
@@ -155,7 +145,7 @@ export function GridTopology() {
                 opacity={0.55}
               />
               {/* Animated packet */}
-              <circle r={2.5} fill="hsl(173 80% 60%)" filter="url(#glow)">
+              <circle r={2.5} fill="hsl(var(--primary))" filter="url(#glow)">
                 <animateMotion dur="3.4s" repeatCount="indefinite" begin={`${link.delay}s`} path={d} />
                 <animate
                   attributeName="opacity"
@@ -175,10 +165,10 @@ export function GridTopology() {
           const isSelected = node.id === selectedNode.id
           const color =
             node.phase === "Energized"
-              ? "hsl(173 80% 55%)"
+              ? "hsl(var(--primary))"
               : node.phase === "Studied"
-                ? "hsl(38 92% 60%)"
-                : "hsl(213 27% 75%)"
+                ? "hsl(var(--fuel-solar))"
+                : "hsl(var(--muted-foreground))"
           return (
             <g
               key={node.id}
@@ -265,10 +255,10 @@ export function GridTopology() {
             style={{
               background:
                 selectedNode.phase === "Energized"
-                  ? "hsl(173 80% 55%)"
+                  ? "hsl(var(--primary))"
                   : selectedNode.phase === "Studied"
-                    ? "hsl(38 92% 60%)"
-                    : "hsl(213 27% 75%)"
+                    ? "hsl(var(--fuel-solar))"
+                    : "hsl(var(--muted-foreground))"
             }}
           />
           {selectedNode.phase}
@@ -299,9 +289,9 @@ export function GridTopology() {
                 <span
                   className={
                     event.tone === "positive"
-                      ? "text-emerald-300"
+                      ? "text-status-success-foreground"
                       : event.tone === "negative"
-                        ? "text-rose-300"
+                        ? "text-status-error-foreground"
                         : "text-foreground"
                   }
                 >
@@ -319,10 +309,10 @@ export function GridTopology() {
           <span className="h-2 w-2 rounded-full bg-primary" /> Energized
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-amber-400" /> Studied
+          <span className="h-2 w-2 rounded-full bg-fuel-solar" /> Studied
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-slate-300" /> Queued
+          <span className="h-2 w-2 rounded-full bg-muted-foreground" /> Queued
         </div>
       </div>
     </div>
