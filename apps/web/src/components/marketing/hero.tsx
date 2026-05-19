@@ -1,6 +1,9 @@
 import { ArrowRight } from "lucide-react"
 import Link from "next/link"
 
+import { AnimatedGradientText } from "@/components/magicui/animated-gradient-text"
+import { AuroraText } from "@/components/magicui/aurora-text"
+import { BorderBeam } from "@/components/magicui/border-beam"
 import { Button } from "@/components/ui/button"
 
 import { GridTopology } from "./grid-topology"
@@ -40,30 +43,34 @@ export function Hero({ latestSnapshotAt }: HeroProps) {
         <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
           <div>
             {freshness ? (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="relative flex h-2 w-2">
+              <AnimatedGradientText>
+                <span className="relative mr-1 inline-flex h-1.5 w-1.5">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
                 </span>
                 <span className="font-mono uppercase tracking-wide">
                   Live · last snapshot {freshness}
                 </span>
-              </div>
+              </AnimatedGradientText>
             ) : null}
             <h1 className="mt-6 max-w-4xl text-balance text-5xl font-semibold tracking-tight md:text-7xl">
-              Track every project in America&apos;s interconnection queue.
+              Track every project in{" "}
+              <AuroraText>America&apos;s interconnection queue</AuroraText>.
             </h1>
             <p className="mt-6 max-w-2xl text-balance text-lg text-muted-foreground md:text-xl">
               GridPath ingests the ERCOT and CAISO queue reports daily, normalizes them into one
               schema, and records every field that changes, so you can stop diffing spreadsheets.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3">
-              <Button asChild size="lg">
-                <Link href="/signup">
-                  Start free
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              </Button>
+              <div className="relative isolate overflow-hidden rounded-md">
+                <Button asChild size="lg">
+                  <Link href="/signup">
+                    Start free
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+                <BorderBeam size={120} duration={5} />
+              </div>
               <Button asChild size="lg" variant="ghost">
                 <Link href="/login">Sign in</Link>
               </Button>

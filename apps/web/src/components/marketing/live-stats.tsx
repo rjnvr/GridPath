@@ -1,6 +1,4 @@
-"use client"
-
-import { useCountUp } from "./use-count-up"
+import { NumberTicker } from "@/components/ui/number-ticker"
 
 interface LiveStatsProps {
   totalProjects: number
@@ -9,48 +7,41 @@ interface LiveStatsProps {
   isoCount: number
 }
 
-function formatGw(mw: number | null) {
-  if (mw == null) return "—"
-  const gw = mw / 1000
-  if (gw >= 100) return `${Math.round(gw)} GW`
-  return `${gw.toFixed(1)} GW`
-}
-
 export function LiveStats({ totalProjects, totalMwRequested, changesLast7d, isoCount }: LiveStatsProps) {
+  const gw = totalMwRequested != null ? totalMwRequested / 1000 : 0
   return (
-    <section aria-label="GridPath live stats" className="border-y border-border">
+    <section aria-label="GridPath live stats" className="border-y border-border bg-background">
       <div className="mx-auto grid max-w-5xl grid-cols-2 divide-border md:grid-cols-4 md:divide-x">
-        <Stat label="Projects tracked" value={totalProjects} format="integer" />
-        <Stat label="MW in queue" value={totalMwRequested ?? 0} format="gw" suffixHint={formatGw(totalMwRequested)} />
-        <Stat label="Changes this week" value={changesLast7d} format="integer" />
-        <Stat label="ISOs covered" value={isoCount} format="integer" />
+        <Stat label="Projects tracked" value={totalProjects} />
+        <Stat label="GW in queue" value={gw} decimals={gw >= 100 ? 0 : 1} suffix=" GW" />
+        <Stat label="Changes this week" value={changesLast7d} />
+        <Stat label="ISOs covered" value={isoCount} />
       </div>
     </section>
   )
 }
 
-interface StatProps {
+function Stat({
+  label,
+  value,
+  decimals = 0,
+  suffix
+}: {
   label: string
   value: number
-  format: "integer" | "gw"
-  suffixHint?: string
-}
-
-function Stat({ label, value, format, suffixHint }: StatProps) {
-  const { value: counted, ref } = useCountUp<HTMLParagraphElement>(value)
-  const display =
-    format === "gw"
-      ? formatGw(counted)
-      : counted.toLocaleString()
+  decimals?: number
+  suffix?: string
+}) {
   return (
     <div className="px-6 py-8 md:py-10">
-      <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
-      <p
-        ref={ref}
-        className="mt-2 font-mono text-3xl tabular-nums tracking-tight text-foreground md:text-4xl"
-        aria-label={suffixHint ?? `${value.toLocaleString()} ${label}`}
-      >
-        {display}
+      <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-2 flex items-baseline gap-0.5 text-3xl tracking-tight text-foreground md:text-4xl">
+        <NumberTicker value={value} decimalPlaces={decimals} />
+        {suffix ? (
+          <span className="text-base font-medium text-muted-foreground">{suffix}</span>
+        ) : null}
       </p>
     </div>
   )

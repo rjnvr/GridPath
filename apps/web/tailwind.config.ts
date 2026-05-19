@@ -99,6 +99,25 @@ const config: Config = {
         "pulse-soft": {
           "0%, 100%": { opacity: "0.6" },
           "50%": { opacity: "1" }
+        },
+        "gp-gradient-shift": {
+          "0%, 100%": { backgroundPosition: "0% 50%" },
+          "50%": { backgroundPosition: "100% 50%" }
+        },
+        "gp-aurora-shift": {
+          "0%, 100%": { backgroundPosition: "0% 50%" },
+          "50%": { backgroundPosition: "100% 50%" }
+        },
+        "gp-marquee": {
+          from: { transform: "translateX(0)" },
+          to: { transform: "translateX(calc(-100% - var(--gap)))" }
+        },
+        "gp-marquee-vertical": {
+          from: { transform: "translateY(0)" },
+          to: { transform: "translateY(calc(-100% - var(--gap)))" }
+        },
+        "gp-border-beam": {
+          "100%": { offsetDistance: "100%" }
         }
       },
       animation: {
