@@ -42,7 +42,15 @@ import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from "maplibr
 import { motion } from "motion/react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState, useTransition } from "react"
+import {
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition
+} from "react"
 import { toast } from "sonner"
 
 import { createWatchlistClientAction } from "@/app/(app)/watchlists/actions"
@@ -88,7 +96,9 @@ type ProjectFeatureCollection = GeoJSON.FeatureCollection<
     projectName: string
     mwRequested: number | null
     fuelType: string
+    fuelKey: string
     currentPhase: string
+    currentStatus: string
     filedDate: string | null
   }
 >
@@ -105,6 +115,7 @@ type FilterState = {
   iso: string
   fuelType: string
   phase: string
+  status: string
   mwBucket: string
   ownerCompany: string
 }
@@ -117,6 +128,8 @@ type EventFilterState = {
 }
 
 type PanelMode = "projects" | "events"
+type MapMode = "normal" | "minimized" | "fullscreen"
+type MapSize = { width: number; height: number }
 
 const columns: ColumnDef<GridProject>[] = [
   {
@@ -249,15 +262,93 @@ function tileStyle() {
   return {
     version: 8,
     sources: {
-      osm: {
+      darkMatter: {
         type: "raster",
-        tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+        tiles: [
+          "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+          "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+          "https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"
+        ],
         tileSize: 256,
-        attribution: "© OpenStreetMap contributors"
+        attribution: "© OpenStreetMap contributors © CARTO"
       }
     },
-    layers: [{ id: "osm", type: "raster", source: "osm" }]
+    layers: [{ id: "dark-matter", type: "raster", source: "darkMatter" }]
   } satisfies maplibregl.StyleSpecification
+}
+
+function normalizeFuelKey(value: string | null | undefined): keyof typeof fuelColors {
+  const normalized = value?.toLowerCase() ?? ""
+  if (normalized.includes("solar")) return "solar"
+  if (normalized.includes("wind")) return "wind"
+  if (normalized.includes("storage") || normalized.includes("battery") || normalized.includes("bess")) {
+    return "storage"
+  }
+  if (normalized.includes("gas")) return "gas"
+  if (normalized.includes("hydro")) return "hydro"
+  return "other"
+}
+
+function blimpIconImage(color: string): ImageData {
+  const canvas = document.createElement("canvas")
+  const scale = 2
+  canvas.width = 44 * scale
+  canvas.height = 28 * scale
+  const ctx = canvas.getContext("2d")
+  if (!ctx) {
+    throw new Error("Could not create blimp icon canvas")
+  }
+
+  ctx.scale(scale, scale)
+  ctx.clearRect(0, 0, 44, 28)
+  ctx.shadowColor = "rgba(0, 0, 0, 0.45)"
+  ctx.shadowBlur = 4
+  ctx.shadowOffsetY = 1
+  ctx.fillStyle = color
+  ctx.strokeStyle = "#0e0f10"
+  ctx.lineWidth = 1.4
+
+  ctx.beginPath()
+  ctx.ellipse(20, 12, 16, 8, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.stroke()
+
+  ctx.beginPath()
+  ctx.moveTo(34, 9)
+  ctx.lineTo(42, 5)
+  ctx.lineTo(39, 12)
+  ctx.lineTo(42, 19)
+  ctx.lineTo(34, 15)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+
+  ctx.shadowBlur = 0
+  ctx.fillStyle = "#111312"
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.35)"
+  ctx.lineWidth = 0.7
+  ctx.beginPath()
+  ctx.roundRect(14, 18, 12, 5, 2)
+  ctx.fill()
+  ctx.stroke()
+
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.45)"
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(9, 10)
+  ctx.quadraticCurveTo(20, 5, 31, 10)
+  ctx.stroke()
+
+  return ctx.getImageData(0, 0, canvas.width, canvas.height)
+}
+
+function ensureBlimpIcons(map: MapLibreMap) {
+  Object.entries(fuelColors).forEach(([fuel, color]) => {
+    const id = `blimp-${fuel}`
+    if (!map.hasImage(id)) {
+      map.addImage(id, blimpIconImage(color), { pixelRatio: 2 })
+    }
+  })
 }
 
 function projectsToGeoJson(projects: GridProject[]): ProjectFeatureCollection {
@@ -277,7 +368,9 @@ function projectsToGeoJson(projects: GridProject[]): ProjectFeatureCollection {
           projectName: project.projectName ?? project.queueId,
           mwRequested: project.mwRequested,
           fuelType: project.fuelType ?? "unknown",
+          fuelKey: normalizeFuelKey(project.fuelType),
           currentPhase: project.currentPhase ?? "Unknown",
+          currentStatus: project.currentStatus ?? "Unknown",
           filedDate: project.filedDate
         }
       }))
@@ -326,6 +419,7 @@ function filterFromSearchParams(params: URLSearchParams): FilterState {
     iso: iso === "ERCOT" || iso === "CAISO" ? iso : "all",
     fuelType: params.get("fuel") ?? "all",
     phase: params.get("phase") ?? "all",
+    status: params.get("status") ?? "all",
     mwBucket: mw && VALID_MW_BUCKETS.has(mw) ? mw : "all",
     ownerCompany: params.get("owner") ?? ""
   }
@@ -389,9 +483,15 @@ function eventWithinWindow(event: QueueEvent, timeWindow: string): boolean {
   return elapsed <= 30 * 24 * 60 * 60 * 1000
 }
 
-function gridRowsForMapSize(isFullscreen: boolean, mapHeightPercent: number): string {
-  if (isFullscreen) return "auto 1fr"
-  return `auto minmax(420px, ${mapHeightPercent}%) 10px minmax(180px, 1fr)`
+function isActiveProject(project: GridProject): boolean {
+  const statusText = [project.currentStatus, project.currentPhase].filter(Boolean).join(" ").toLowerCase()
+  return !/(withdrawn|cancelled|canceled|energized|completed|retired|inactive)/.test(statusText)
+}
+
+function passesStatus(project: GridProject, status: string): boolean {
+  if (status === "all") return true
+  if (status === "active") return isActiveProject(project)
+  return project.currentStatus === status
 }
 
 function hasActiveFilters(filters: FilterState, searchQuery: string): boolean {
@@ -400,9 +500,26 @@ function hasActiveFilters(filters: FilterState, searchQuery: string): boolean {
     filters.iso !== "all" ||
     filters.fuelType !== "all" ||
     filters.phase !== "all" ||
+    filters.status !== "all" ||
     filters.mwBucket !== "all" ||
     filters.ownerCompany.trim().length > 0
   )
+}
+
+function mapPanelStyle(mapMode: MapMode, mapSize: MapSize): CSSProperties {
+  if (mapMode === "fullscreen") {
+    return {
+      bottom: "1.5rem",
+      height: "calc(100vh - 6.5rem)",
+      left: "1.5rem",
+      right: "1.5rem",
+      width: "auto"
+    }
+  }
+  if (mapMode === "minimized") {
+    return { bottom: "1.5rem", height: 76, right: "1.5rem", width: 340 }
+  }
+  return { bottom: "1.5rem", height: mapSize.height, right: "1.5rem", width: mapSize.width }
 }
 
 function hasActiveEventFilters(filters: EventFilterState, searchQuery: string): boolean {
@@ -428,12 +545,11 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     timeWindow: "30d"
   })
   const [searchQuery, setSearchQuery] = useState("")
-  const [isFullscreen, setIsFullscreen] = useState(false)
-  const [mapHeightPercent, setMapHeightPercent] = useState(68)
+  const [mapMode, setMapMode] = useState<MapMode>("normal")
+  const [mapSize, setMapSize] = useState<MapSize>({ width: 560, height: 430 })
   const [sorting, setSorting] = useState<SortingState>([])
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 50 })
   const [selectedProject, setSelectedProject] = useState<GridProject | null>(null)
-  const splitContainerRef = useRef<HTMLElement | null>(null)
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const popupRef = useRef<maplibregl.Popup | null>(null)
@@ -465,6 +581,18 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
       ].sort(),
     [filters.iso, initialData.projects]
   )
+  const statuses = useMemo(
+    () =>
+      [
+        ...new Set(
+          initialData.projects
+            .filter((project) => filters.iso === "all" || project.iso === filters.iso)
+            .map((project) => project.currentStatus)
+            .filter(Boolean)
+        )
+      ].sort(),
+    [filters.iso, initialData.projects]
+  )
   const ownerCompanies = useMemo(
     () =>
       [
@@ -490,12 +618,14 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         const isoMatch = filters.iso === "all" || project.iso === filters.iso
         const fuelMatch = filters.fuelType === "all" || project.fuelType === filters.fuelType
         const phaseMatch = filters.phase === "all" || project.currentPhase === filters.phase
+        const statusMatch = passesStatus(project, filters.status)
         const ownerMatch =
           !normalizedOwner || project.ownerCompany?.toLowerCase().includes(normalizedOwner)
         return (
           isoMatch &&
           fuelMatch &&
           phaseMatch &&
+          statusMatch &&
           ownerMatch &&
           passesMwBucket(project, filters.mwBucket) &&
           projectMatchesSearch(project, normalizedSearch)
@@ -592,40 +722,43 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         type: "geojson",
         data: projectsToGeoJson(filteredProjectsRef.current)
       })
+      ensureBlimpIcons(map)
       map.addLayer({
         id: "projects",
-        type: "circle",
+        type: "symbol",
         source: "projects",
-        paint: {
-          "circle-radius": [
+        layout: {
+          "icon-image": [
+            "match",
+            ["get", "fuelKey"],
+            "solar",
+            "blimp-solar",
+            "wind",
+            "blimp-wind",
+            "storage",
+            "blimp-storage",
+            "gas",
+            "blimp-gas",
+            "hydro",
+            "blimp-hydro",
+            "blimp-other"
+          ],
+          "icon-size": [
             "interpolate",
             ["linear"],
             ["coalesce", ["get", "mwRequested"], 0],
             0,
-            4,
+            0.55,
             500,
-            7,
+            0.78,
             1000,
-            10
+            1
           ],
-          "circle-color": [
-            "match",
-            ["get", "fuelType"],
-            "solar",
-            fuelColors.solar,
-            "wind",
-            fuelColors.wind,
-            "storage",
-            fuelColors.storage,
-            "gas",
-            fuelColors.gas,
-            "hydro",
-            fuelColors.hydro,
-            fuelColors.other
-          ],
-          "circle-opacity": 0.92,
-          "circle-stroke-width": 1.25,
-          "circle-stroke-color": "#0e0f10"
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true
+        },
+        paint: {
+          "icon-opacity": 0.96
         }
       })
 
@@ -694,25 +827,25 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     }
     const resize = window.setTimeout(() => map.resize(), 220)
     return () => window.clearTimeout(resize)
-  }, [isFullscreen, mapHeightPercent])
+  }, [mapMode, mapSize])
 
-  function handleResizeHandlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    if (isFullscreen || !splitContainerRef.current) {
+  function handleMapResizePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (mapMode !== "normal") {
       return
     }
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
-    const bounds = splitContainerRef.current.getBoundingClientRect()
-
-    function updateMapHeight(clientY: number) {
-      const nextPercent = ((clientY - bounds.top) / bounds.height) * 100
-      setMapHeightPercent(Math.min(82, Math.max(46, Math.round(nextPercent))))
-    }
-
-    updateMapHeight(event.clientY)
+    const startX = event.clientX
+    const startY = event.clientY
+    const startSize = mapSize
 
     function handlePointerMove(pointerEvent: PointerEvent) {
-      updateMapHeight(pointerEvent.clientY)
+      const maxWidth = Math.max(380, window.innerWidth - 64)
+      const maxHeight = Math.max(300, window.innerHeight - 128)
+      setMapSize({
+        width: Math.min(maxWidth, Math.max(360, Math.round(startSize.width + pointerEvent.clientX - startX))),
+        height: Math.min(maxHeight, Math.max(260, Math.round(startSize.height + pointerEvent.clientY - startY)))
+      })
     }
 
     function handlePointerUp() {
@@ -736,17 +869,20 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
 
   function clearFilters() {
     setSearchQuery("")
-    setFilters({ iso: "all", fuelType: "all", phase: "all", mwBucket: "all", ownerCompany: "" })
+    setFilters({
+      iso: "all",
+      fuelType: "all",
+      phase: "all",
+      status: "all",
+      mwBucket: "all",
+      ownerCompany: ""
+    })
     setEventFilters({ iso: "all", severity: "all", eventType: "all", timeWindow: "30d" })
   }
 
   return (
-    <main className="min-h-[calc(100vh-3.5rem)] bg-background text-foreground">
-      <section
-        ref={splitContainerRef}
-        className="grid h-[calc(100vh-3.5rem)]"
-        style={{ gridTemplateRows: gridRowsForMapSize(isFullscreen, mapHeightPercent) }}
-      >
+    <main className="relative min-h-[calc(100vh-3.5rem)] bg-background text-foreground">
+      <section className="flex h-[calc(100vh-3.5rem)] flex-col">
         <KpiStrip
           visibleProjects={kpis.visibleProjects}
           totalGw={kpis.totalGw}
@@ -754,90 +890,11 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
           eventsLast7d={kpis.eventsLast7d}
           freshnessLabel={freshnessText(initialData.latestSnapshotAt)}
         />
-        <div className="relative border-b border-border">
-          <div ref={mapContainerRef} className="absolute inset-0" />
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, ease: "easeOut", delay: 0.15 }}
-            className="pointer-events-none absolute left-4 top-4 flex flex-col gap-2"
-          >
-            <div className="pointer-events-auto inline-flex items-center gap-2 rounded-md border border-border bg-card/90 px-3 py-1.5 text-xs text-muted-foreground shadow-md backdrop-blur">
-              <span className="relative inline-flex h-1.5 w-1.5">
-                <span className="absolute inset-0 animate-pulse-soft rounded-full bg-primary" />
-                <span className="absolute inset-0 rounded-full bg-primary/70" />
-              </span>
-              <span className="font-mono tabular-nums">
-                <NumberTicker value={kpis.visibleProjects} className="text-foreground" /> projects visible
-              </span>
-            </div>
-            <FuelLegend />
-          </motion.div>
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, ease: "easeOut", delay: 0.15 }}
-            className="absolute right-4 top-4 flex items-center gap-1 rounded-md border border-border bg-card/90 p-1 shadow-md backdrop-blur"
-          >
-            <Button
-              type="button"
-              variant={isFullscreen ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setIsFullscreen(!isFullscreen)}
-              aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-              title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-            >
-              {isFullscreen ? (
-                <Minimize2 className="h-4 w-4" />
-              ) : (
-                <Maximize2 className="h-4 w-4" />
-              )}
-            </Button>
-          </motion.div>
-          {initialData.projects.length === 0 ? (
-            <div className="absolute left-6 bottom-6 rounded-md border border-border bg-card/90 px-4 py-3 text-sm text-muted-foreground shadow-md backdrop-blur">
-              Set <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">DATABASE_URL</code>, run migrations, and ingest ERCOT data to populate the map.
-            </div>
-          ) : null}
-        </div>
-
-        {!isFullscreen ? (
-          <div
-            role="separator"
-            aria-orientation="horizontal"
-            aria-label="Resize map and table"
-            tabIndex={0}
-            onPointerDown={handleResizeHandlePointerDown}
-            onKeyDown={(event) => {
-              if (event.key === "ArrowUp") {
-                event.preventDefault()
-                setMapHeightPercent((current) => Math.max(46, current - 4))
-              }
-              if (event.key === "ArrowDown") {
-                event.preventDefault()
-                setMapHeightPercent((current) => Math.min(82, current + 4))
-              }
-              if (event.key === "Home") {
-                event.preventDefault()
-                setMapHeightPercent(46)
-              }
-              if (event.key === "End") {
-                event.preventDefault()
-                setMapHeightPercent(82)
-              }
-            }}
-            className="group flex cursor-row-resize items-center justify-center border-y border-border bg-background/95 outline-none transition hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring"
-            title="Drag to resize the map"
-          >
-            <GripHorizontal className="h-4 w-4 text-muted-foreground transition group-hover:text-foreground" />
-          </div>
-        ) : null}
-
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: "easeOut", delay: 0.2 }}
-          className="flex min-h-0 flex-col overflow-hidden bg-card"
+          className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card"
         >
           <div className="shrink-0 border-b border-border px-4 py-3">
             <div className="flex flex-wrap items-center gap-3">
@@ -893,7 +950,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
               </div>
             </div>
             {panelMode === "projects" ? (
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
                 <select
                   value={filters.iso}
                   onChange={(event) =>
@@ -902,6 +959,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                       iso: event.target.value,
                       fuelType: "all",
                       phase: "all",
+                      status: "all",
                       ownerCompany: ""
                     }))
                   }
@@ -910,6 +968,21 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                   <option value="all">All ISOs</option>
                   <option value="ERCOT">ERCOT</option>
                   <option value="CAISO">CAISO</option>
+                </select>
+                <select
+                  value={filters.status}
+                  onChange={(event) =>
+                    setFilters((current) => ({ ...current, status: event.target.value }))
+                  }
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="all">All statuses</option>
+                  <option value="active">Active projects</option>
+                  {statuses.map((status) => (
+                    <option key={status} value={status ?? ""}>
+                      {status}
+                    </option>
+                  ))}
                 </select>
                 <select
                   value={filters.fuelType}
@@ -1119,6 +1192,111 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
           )}
         </motion.div>
       </section>
+
+      <motion.section
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.28, ease: "easeOut" }}
+        className="fixed z-10 overflow-hidden rounded-md border border-border bg-card shadow-2xl"
+        style={mapPanelStyle(mapMode, mapSize)}
+        aria-label="Project map"
+      >
+        <div className="flex h-11 items-center justify-between gap-3 border-b border-border bg-card/95 px-3 backdrop-blur">
+          <div className="flex min-w-0 items-center gap-2">
+            <Layers className="h-4 w-4 text-muted-foreground" />
+            <span className="truncate font-mono text-xs tabular-nums text-muted-foreground">
+              <NumberTicker value={kpis.visibleProjects} className="text-foreground" /> projects visible
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            {mapMode === "minimized" ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setMapMode("normal")}
+                aria-label="Restore map"
+                title="Restore map"
+              >
+                <Maximize2 className="h-4 w-4" />
+              </Button>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setMapMode("minimized")}
+                  aria-label="Minimize map"
+                  title="Minimize map"
+                >
+                  <Minimize2 className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant={mapMode === "fullscreen" ? "secondary" : "ghost"}
+                  size="sm"
+                  onClick={() => setMapMode(mapMode === "fullscreen" ? "normal" : "fullscreen")}
+                  aria-label={mapMode === "fullscreen" ? "Exit fullscreen map" : "Fullscreen map"}
+                  title={mapMode === "fullscreen" ? "Exit fullscreen map" : "Fullscreen map"}
+                >
+                  {mapMode === "fullscreen" ? (
+                    <Minimize2 className="h-4 w-4" />
+                  ) : (
+                    <Maximize2 className="h-4 w-4" />
+                  )}
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+        <div className={mapMode === "minimized" ? "hidden" : "relative h-[calc(100%-2.75rem)]"}>
+          <div ref={mapContainerRef} className="absolute inset-0" />
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: "easeOut", delay: 0.15 }}
+            className="pointer-events-none absolute left-4 top-4 flex flex-col gap-2"
+          >
+            <FuelLegend />
+          </motion.div>
+          {initialData.projects.length === 0 ? (
+            <div className="absolute left-6 bottom-6 rounded-md border border-border bg-card/90 px-4 py-3 text-sm text-muted-foreground shadow-md backdrop-blur">
+              Set <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">DATABASE_URL</code>, run migrations, and ingest ERCOT data to populate the map.
+            </div>
+          ) : null}
+          {mapMode === "normal" ? (
+            <div
+              role="separator"
+              aria-label="Resize map window"
+              tabIndex={0}
+              onPointerDown={handleMapResizePointerDown}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowRight") {
+                  event.preventDefault()
+                  setMapSize((current) => ({ ...current, width: Math.min(window.innerWidth - 64, current.width + 24) }))
+                }
+                if (event.key === "ArrowLeft") {
+                  event.preventDefault()
+                  setMapSize((current) => ({ ...current, width: Math.max(360, current.width - 24) }))
+                }
+                if (event.key === "ArrowDown") {
+                  event.preventDefault()
+                  setMapSize((current) => ({ ...current, height: Math.min(window.innerHeight - 128, current.height + 24) }))
+                }
+                if (event.key === "ArrowUp") {
+                  event.preventDefault()
+                  setMapSize((current) => ({ ...current, height: Math.max(260, current.height - 24) }))
+                }
+              }}
+              className="absolute bottom-0 right-0 grid h-8 w-8 cursor-nwse-resize place-items-center rounded-tl-md border-l border-t border-border bg-card/95 text-muted-foreground outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              title="Drag to resize map"
+            >
+              <GripHorizontal className="h-4 w-4 rotate-[-45deg]" />
+            </div>
+          ) : null}
+        </div>
+      </motion.section>
 
       {selectedProject ? (
         <ProjectDrawer project={selectedProject} onClose={() => setSelectedProject(null)} />
