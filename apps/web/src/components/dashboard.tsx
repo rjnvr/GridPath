@@ -26,7 +26,9 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Database,
+  ExternalLink,
   Filter,
+  GripHorizontal,
   Layers,
   ListChecks,
   Maximize2,
@@ -38,8 +40,9 @@ import {
 } from "lucide-react"
 import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from "maplibre-gl"
 import { motion } from "motion/react"
+import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { type KeyboardEvent, useEffect, useMemo, useRef, useState, useTransition } from "react"
+import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { toast } from "sonner"
 
 import { createWatchlistClientAction } from "@/app/(app)/watchlists/actions"
@@ -134,7 +137,16 @@ const columns: ColumnDef<GridProject>[] = [
   },
   {
     accessorKey: "projectName",
-    header: "Project"
+    header: "Project",
+    cell: ({ row }) => (
+      <Link
+        href={`/projects/${row.original.id}`}
+        onClick={(event) => event.stopPropagation()}
+        className="font-medium underline-offset-4 hover:underline"
+      >
+        {row.original.projectName ?? "Unnamed project"}
+      </Link>
+    )
   },
   {
     accessorKey: "mwRequested",
@@ -377,9 +389,9 @@ function eventWithinWindow(event: QueueEvent, timeWindow: string): boolean {
   return elapsed <= 30 * 24 * 60 * 60 * 1000
 }
 
-function gridRowsForMapSize(isFullscreen: boolean): string {
+function gridRowsForMapSize(isFullscreen: boolean, mapHeightPercent: number): string {
   if (isFullscreen) return "auto 1fr"
-  return "auto minmax(360px, 42%) 1fr"
+  return `auto minmax(420px, ${mapHeightPercent}%) 10px minmax(180px, 1fr)`
 }
 
 function hasActiveFilters(filters: FilterState, searchQuery: string): boolean {
@@ -417,9 +429,11 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
   })
   const [searchQuery, setSearchQuery] = useState("")
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [mapHeightPercent, setMapHeightPercent] = useState(68)
   const [sorting, setSorting] = useState<SortingState>([])
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 50 })
   const [selectedProject, setSelectedProject] = useState<GridProject | null>(null)
+  const splitContainerRef = useRef<HTMLElement | null>(null)
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const popupRef = useRef<maplibregl.Popup | null>(null)
@@ -680,16 +694,38 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     }
     const resize = window.setTimeout(() => map.resize(), 220)
     return () => window.clearTimeout(resize)
-  }, [isFullscreen])
+  }, [isFullscreen, mapHeightPercent])
 
-  function clearFilters() {
-    setSearchQuery("")
-    setFilters({ iso: "all", fuelType: "all", phase: "all", mwBucket: "all", ownerCompany: "" })
-    setEventFilters({ iso: "all", severity: "all", eventType: "all", timeWindow: "30d" })
+  function handleResizeHandlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (isFullscreen || !splitContainerRef.current) {
+      return
+    }
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const bounds = splitContainerRef.current.getBoundingClientRect()
+
+    function updateMapHeight(clientY: number) {
+      const nextPercent = ((clientY - bounds.top) / bounds.height) * 100
+      setMapHeightPercent(Math.min(82, Math.max(46, Math.round(nextPercent))))
+    }
+
+    updateMapHeight(event.clientY)
+
+    function handlePointerMove(pointerEvent: PointerEvent) {
+      updateMapHeight(pointerEvent.clientY)
+    }
+
+    function handlePointerUp() {
+      window.removeEventListener("pointermove", handlePointerMove)
+      window.removeEventListener("pointerup", handlePointerUp)
+    }
+
+    window.addEventListener("pointermove", handlePointerMove)
+    window.addEventListener("pointerup", handlePointerUp, { once: true })
   }
 
   function handleProjectRowKeyDown(
-    event: KeyboardEvent<HTMLTableRowElement>,
+    event: React.KeyboardEvent<HTMLTableRowElement>,
     project: GridProject
   ) {
     if (event.key === "Enter" || event.key === " ") {
@@ -698,11 +734,18 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     }
   }
 
+  function clearFilters() {
+    setSearchQuery("")
+    setFilters({ iso: "all", fuelType: "all", phase: "all", mwBucket: "all", ownerCompany: "" })
+    setEventFilters({ iso: "all", severity: "all", eventType: "all", timeWindow: "30d" })
+  }
+
   return (
     <main className="min-h-[calc(100vh-3.5rem)] bg-background text-foreground">
       <section
+        ref={splitContainerRef}
         className="grid h-[calc(100vh-3.5rem)]"
-        style={{ gridTemplateRows: gridRowsForMapSize(isFullscreen) }}
+        style={{ gridTemplateRows: gridRowsForMapSize(isFullscreen, mapHeightPercent) }}
       >
         <KpiStrip
           visibleProjects={kpis.visibleProjects}
@@ -757,6 +800,38 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             </div>
           ) : null}
         </div>
+
+        {!isFullscreen ? (
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize map and table"
+            tabIndex={0}
+            onPointerDown={handleResizeHandlePointerDown}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowUp") {
+                event.preventDefault()
+                setMapHeightPercent((current) => Math.max(46, current - 4))
+              }
+              if (event.key === "ArrowDown") {
+                event.preventDefault()
+                setMapHeightPercent((current) => Math.min(82, current + 4))
+              }
+              if (event.key === "Home") {
+                event.preventDefault()
+                setMapHeightPercent(46)
+              }
+              if (event.key === "End") {
+                event.preventDefault()
+                setMapHeightPercent(82)
+              }
+            }}
+            className="group flex cursor-row-resize items-center justify-center border-y border-border bg-background/95 outline-none transition hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring"
+            title="Drag to resize the map"
+          >
+            <GripHorizontal className="h-4 w-4 text-muted-foreground transition group-hover:text-foreground" />
+          </div>
+        ) : null}
 
         <motion.div
           initial={{ opacity: 0, y: 8 }}
@@ -1061,18 +1136,18 @@ function EventTable({
   projectsById: Map<string, GridProject>
   onSelectProject: (project: GridProject | null) => void
 }) {
-  function selectEventProject(event: QueueEvent) {
-    onSelectProject(projectsById.get(event.projectId) ?? null)
-  }
-
   function handleEventRowKeyDown(
-    keyboardEvent: KeyboardEvent<HTMLTableRowElement>,
+    keyboardEvent: React.KeyboardEvent<HTMLTableRowElement>,
     queueEvent: QueueEvent
   ) {
     if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
       keyboardEvent.preventDefault()
-      selectEventProject(queueEvent)
+      onSelectProject(projectsById.get(queueEvent.projectId) ?? null)
     }
+  }
+
+  function selectEventProject(event: QueueEvent) {
+    onSelectProject(projectsById.get(event.projectId) ?? null)
   }
 
   return (
@@ -1128,7 +1203,13 @@ function EventTable({
                 <td className="px-4 py-3">
                   <span className="font-mono text-xs text-muted-foreground">{event.queueId}</span>
                   <br />
-                  {event.projectName ?? "Unnamed project"}
+                  <Link
+                    href={`/projects/${event.projectId}`}
+                    onClick={(clickEvent) => clickEvent.stopPropagation()}
+                    className="font-medium underline-offset-4 hover:underline"
+                  >
+                    {event.projectName ?? "Unnamed project"}
+                  </Link>
                 </td>
                 <td className="max-w-[220px] truncate px-4 py-3 text-xs text-muted-foreground">
                   {event.sourceName ?? event.sourceUrl ?? "—"}
@@ -1190,6 +1271,13 @@ function ProjectDrawer({ project, onClose }: { project: GridProject; onClose: ()
             </span>
             <span>MW</span>
           </div>
+          <Link
+            href={`/projects/${project.id}`}
+            className="mt-3 inline-flex items-center gap-1 text-sm text-primary underline-offset-4 hover:underline"
+          >
+            Open full detail
+            <ExternalLink className="h-3.5 w-3.5" />
+          </Link>
         </div>
         <button
           type="button"
@@ -1426,8 +1514,8 @@ function SaveViewDialog({ filters }: { filters: FilterState }) {
         <DialogHeader>
           <DialogTitle>Save this view</DialogTitle>
           <DialogDescription>
-            Pin the current filters so you can come back to them — and (soon) get emailed when matching
-            projects change.
+            Pin the current filters so you can come back to them and get emailed when matching
+            projects move.
           </DialogDescription>
         </DialogHeader>
         <form action={handleSubmit} className="space-y-4">
@@ -1446,6 +1534,19 @@ function SaveViewDialog({ filters }: { filters: FilterState }) {
           <div className="rounded-md border border-border bg-background p-3 text-sm text-muted-foreground">
             {filterSummary(filters)}
           </div>
+          <label className="flex items-start gap-3 rounded-md border border-border bg-background p-3 text-sm">
+            <input
+              type="checkbox"
+              name="notifyEmail"
+              className="mt-0.5 h-4 w-4 rounded border-border bg-background"
+            />
+            <span>
+              <span className="block font-medium text-foreground">Notify me by email</span>
+              <span className="mt-1 block text-muted-foreground">
+                Send a digest when critical, important, or new-project events match this view.
+              </span>
+            </span>
+          </label>
           <input type="hidden" name="iso" value={filters.iso === "all" ? "" : filters.iso} />
           <input type="hidden" name="fuelType" value={filters.fuelType === "all" ? "" : filters.fuelType} />
           <input type="hidden" name="phase" value={filters.phase === "all" ? "" : filters.phase} />

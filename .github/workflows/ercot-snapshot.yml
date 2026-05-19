@@ -33,6 +33,14 @@ jobs:
           DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python -m gridpath_ingestion.health
+      - name: Send watchlist impact briefs
+        env:
+          DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          AUTH_RESEND_KEY: ${{ secrets.AUTH_RESEND_KEY }}
+          AUTH_EMAIL_FROM: ${{ secrets.AUTH_EMAIL_FROM }}
+          AUTH_URL: ${{ secrets.AUTH_URL }}
+        run: python -m gridpath_ingestion.watchlist_alerts
       - name: Notify Slack on failure
         if: failure() && secrets.SLACK_WEBHOOK_URL != ''
         env:

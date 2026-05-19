@@ -7,7 +7,10 @@ import type {
   IsoCoverage,
   MonthlyChangeTrend,
   MonthlyProjectTrend,
+  NearbySubstation,
   ProjectChange,
+  ProjectDetailData,
+  ProjectSnapshot,
   QueueEvent,
   RecentChange,
   SourceReportHealth,
@@ -56,6 +59,21 @@ type SubstationRow = {
   voltage_kv: string | number | null
   lat: string | number | null
   lng: string | number | null
+}
+
+type NearbySubstationRow = SubstationRow & {
+  distance_miles: string | number | null
+}
+
+type ProjectSnapshotRow = {
+  id: string
+  snapshot_date: Date | string
+  captured_at: Date | string
+  current_phase: string | null
+  current_status: string | null
+  mw_requested: string | number | null
+  source_url: string | null
+  source_name: string | null
 }
 
 type IsoHealthRow = {
@@ -226,6 +244,26 @@ function mapSubstation(row: SubstationRow): Substation {
   }
 }
 
+function mapNearbySubstation(row: NearbySubstationRow): NearbySubstation {
+  return {
+    ...mapSubstation(row),
+    distanceMiles: numberOrNull(row.distance_miles)
+  }
+}
+
+function mapProjectSnapshot(row: ProjectSnapshotRow): ProjectSnapshot {
+  return {
+    id: row.id,
+    snapshotDate: toDateString(row.snapshot_date) ?? "",
+    capturedAt: toIsoString(row.captured_at) ?? "",
+    currentPhase: row.current_phase,
+    currentStatus: row.current_status,
+    mwRequested: numberOrNull(row.mw_requested),
+    sourceUrl: row.source_url,
+    sourceName: row.source_name
+  }
+}
+
 function mapQueueEvent(row: QueueEventRow): QueueEvent {
   return {
     id: row.id,
@@ -296,6 +334,156 @@ async function getQueueEventRows(limit = 2000): Promise<QueueEventRow[]> {
   } catch (error) {
     if (isUndefinedRelationError(error)) return []
     throw error
+  }
+}
+
+async function getProjectEventRows(projectId: string): Promise<QueueEventRow[]> {
+  const sql = getSql()
+  try {
+    const rows = await sql`
+      select
+        e.id,
+        e.project_id,
+        p.iso,
+        p.queue_id,
+        p.project_name,
+        r.source_url,
+        r.source_name,
+        e.event_type,
+        e.severity,
+        e.title,
+        e.description,
+        e.field_name,
+        e.old_value,
+        e.new_value,
+        e.delta_mw,
+        e.event_at,
+        e.created_at
+      from queue_events e
+      join projects p on p.id = e.project_id
+      left join source_reports r on r.id = e.source_report_id
+      where e.project_id = ${projectId}
+      order by e.event_at desc, e.created_at desc
+    `
+    return rows as QueueEventRow[]
+  } catch (error) {
+    if (isUndefinedRelationError(error)) return []
+    throw error
+  }
+}
+
+async function getProjectSnapshotRows(projectId: string): Promise<ProjectSnapshotRow[]> {
+  const sql = getSql()
+  try {
+    const rows = await sql`
+      select
+        s.id,
+        s.snapshot_date,
+        s.captured_at,
+        s.current_phase,
+        s.current_status,
+        s.mw_requested,
+        r.source_url,
+        r.source_name
+      from project_snapshots s
+      left join source_reports r on r.id = s.source_report_id
+      where s.project_id = ${projectId}
+      order by s.snapshot_date desc, s.captured_at desc
+      limit 48
+    `
+    return rows as ProjectSnapshotRow[]
+  } catch (error) {
+    if (!isUndefinedRelationError(error)) throw error
+  }
+
+  try {
+    const fallbackRows = await sql`
+      select
+        s.id,
+        s.snapshot_date,
+        s.captured_at,
+        s.current_phase,
+        s.current_status,
+        s.mw_requested,
+        null::text as source_url,
+        null::text as source_name
+      from project_snapshots s
+      where s.project_id = ${projectId}
+      order by s.snapshot_date desc, s.captured_at desc
+      limit 48
+    `
+    return fallbackRows as ProjectSnapshotRow[]
+  } catch (error) {
+    if (isUndefinedRelationError(error)) return []
+    throw error
+  }
+}
+
+async function getNearbySubstationRows(projectId: string): Promise<NearbySubstationRow[]> {
+  const sql = getSql()
+  try {
+    const rows = await sql`
+      select
+        s.id,
+        s.hifld_id,
+        s.name,
+        s.owner,
+        s.voltage_kv,
+        s.lat,
+        s.lng,
+        round((st_distancesphere(s.geom, p.geom) / 1609.344)::numeric, 1) as distance_miles
+      from substations s
+      join projects p on p.id = ${projectId}
+      where s.geom is not null
+        and p.geom is not null
+      order by s.geom <-> p.geom
+      limit 8
+    `
+    return rows as NearbySubstationRow[]
+  } catch (error) {
+    if (isUndefinedRelationError(error)) return []
+    throw error
+  }
+}
+
+export async function getProjectDetailData(projectId: string): Promise<ProjectDetailData | null> {
+  if (!process.env.DATABASE_URL) {
+    return null
+  }
+
+  const sql = getSql()
+  const projectRows = await sql`
+    select *
+    from projects
+    where id = ${projectId}
+      and iso in ('ERCOT', 'CAISO')
+    limit 1
+  `
+  const projectRow = (projectRows as ProjectRow[])[0]
+  if (!projectRow) {
+    return null
+  }
+
+  const [changeRows, eventRows, snapshotRows, nearbyRows] = await Promise.all([
+    sql`
+      select *
+      from project_status_changes
+      where project_id = ${projectId}
+      order by changed_at desc
+      limit 200
+    `,
+    getProjectEventRows(projectId),
+    getProjectSnapshotRows(projectId),
+    getNearbySubstationRows(projectId)
+  ])
+
+  const changes = (changeRows as ChangeRow[]).map(mapChange)
+  const events = (eventRows as QueueEventRow[]).map(mapQueueEvent)
+
+  return {
+    project: mapProject(projectRow, changes, events),
+    snapshots: (snapshotRows as ProjectSnapshotRow[]).map(mapProjectSnapshot),
+    nearbySubstations: (nearbyRows as NearbySubstationRow[]).map(mapNearbySubstation)
   }
 }
 
