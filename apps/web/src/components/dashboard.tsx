@@ -127,7 +127,48 @@ type EventFilterState = {
 type PanelMode = "projects" | "events"
 type MapMode = "normal" | "fullscreen"
 
-const MAP_DEFAULT_HEIGHT = 520
+const MAP_DEFAULT_HEIGHT = 620
+
+type FuelGlyph = {
+  rects?: Array<{ x: number; y: number; w: number; h: number; r: number }>
+  circles?: Array<{ cx: number; cy: number; r: number }>
+  paths: string[]
+}
+
+/* Path data mirrors the SVGs in `components/icons/fuel.tsx`, so the
+   markers on the map match the legend icons exactly. */
+const FUEL_GLYPHS: Record<keyof typeof fuelColors, FuelGlyph> = {
+  solar: {
+    circles: [{ cx: 12, cy: 12, r: 4 }],
+    paths: [
+      "M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"
+    ]
+  },
+  wind: {
+    paths: [
+      "M3 8h11a3 3 0 1 0-3-3",
+      "M3 14h15a3 3 0 1 1-3 3",
+      "M3 11h7"
+    ]
+  },
+  storage: {
+    rects: [{ x: 3, y: 7, w: 15, h: 10, r: 1.5 }],
+    paths: ["M18 10h2v4h-2", "M7 12h2M11 10v4M14 10v4"]
+  },
+  gas: {
+    paths: [
+      "M12 3c2 3 4 5 4 8a4 4 0 1 1-8 0c0-2 1.5-3.5 2.5-5 .5-.7.8-1.3 1.5-3z",
+      "M12 16a2 2 0 0 0 2-2"
+    ]
+  },
+  hydro: {
+    paths: ["M12 3c3 4 6 7 6 11a6 6 0 1 1-12 0c0-4 3-7 6-11z"]
+  },
+  other: {
+    circles: [{ cx: 12, cy: 12, r: 9 }],
+    paths: ["M12 8v4M12 16h0.01"]
+  }
+}
 
 const columns: ColumnDef<GridProject>[] = [
   {
@@ -271,7 +312,18 @@ function tileStyle() {
         attribution: "© OpenStreetMap contributors © CARTO"
       }
     },
-    layers: [{ id: "dark-matter", type: "raster", source: "darkMatter" }]
+    layers: [
+      {
+        id: "dark-matter",
+        type: "raster",
+        source: "darkMatter",
+        paint: {
+          "raster-brightness-min": 0.12,
+          "raster-contrast": -0.05,
+          "raster-saturation": -0.1
+        }
+      }
+    ]
   } satisfies maplibregl.StyleSpecification
 }
 
@@ -287,64 +339,76 @@ function normalizeFuelKey(value: string | null | undefined): keyof typeof fuelCo
   return "other"
 }
 
-function blimpIconImage(color: string): ImageData {
+function fuelMarkerImage(fuel: keyof typeof fuelColors): ImageData {
   const canvas = document.createElement("canvas")
-  const scale = 2
-  canvas.width = 44 * scale
-  canvas.height = 28 * scale
+  const pixelRatio = 2
+  const size = 30
+  canvas.width = size * pixelRatio
+  canvas.height = size * pixelRatio
   const ctx = canvas.getContext("2d")
   if (!ctx) {
-    throw new Error("Could not create blimp icon canvas")
+    throw new Error("Could not create fuel marker canvas")
   }
 
-  ctx.scale(scale, scale)
-  ctx.clearRect(0, 0, 44, 28)
-  ctx.shadowColor = "rgba(0, 0, 0, 0.45)"
+  ctx.scale(pixelRatio, pixelRatio)
+  ctx.clearRect(0, 0, size, size)
+
+  const cx = size / 2
+  const cy = size / 2
+  const bgRadius = 13
+  const color = fuelColors[fuel]
+
+  ctx.shadowColor = "rgba(0, 0, 0, 0.55)"
   ctx.shadowBlur = 4
   ctx.shadowOffsetY = 1
-  ctx.fillStyle = color
-  ctx.strokeStyle = "#0e0f10"
-  ctx.lineWidth = 1.4
-
+  ctx.fillStyle = "#0e0f10"
   ctx.beginPath()
-  ctx.ellipse(20, 12, 16, 8, 0, 0, Math.PI * 2)
+  ctx.arc(cx, cy, bgRadius, 0, Math.PI * 2)
   ctx.fill()
-  ctx.stroke()
-
-  ctx.beginPath()
-  ctx.moveTo(34, 9)
-  ctx.lineTo(42, 5)
-  ctx.lineTo(39, 12)
-  ctx.lineTo(42, 19)
-  ctx.lineTo(34, 15)
-  ctx.closePath()
-  ctx.fill()
-  ctx.stroke()
 
   ctx.shadowBlur = 0
-  ctx.fillStyle = "#111312"
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.35)"
-  ctx.lineWidth = 0.7
-  ctx.beginPath()
-  ctx.roundRect(14, 18, 12, 5, 2)
-  ctx.fill()
+  ctx.shadowOffsetY = 0
+  ctx.lineWidth = 1.25
+  ctx.strokeStyle = color
   ctx.stroke()
 
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.45)"
-  ctx.lineWidth = 1
-  ctx.beginPath()
-  ctx.moveTo(9, 10)
-  ctx.quadraticCurveTo(20, 5, 31, 10)
-  ctx.stroke()
+  const glyph = FUEL_GLYPHS[fuel]
+  const scale = 0.85
+  ctx.save()
+  ctx.translate(cx - 12 * scale, cy - 12 * scale)
+  ctx.scale(scale, scale)
+  ctx.strokeStyle = color
+  ctx.lineWidth = 1.6
+  ctx.lineCap = "round"
+  ctx.lineJoin = "round"
+
+  if (glyph.circles) {
+    for (const c of glyph.circles) {
+      ctx.beginPath()
+      ctx.arc(c.cx, c.cy, c.r, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+  }
+  if (glyph.rects) {
+    for (const r of glyph.rects) {
+      ctx.beginPath()
+      ctx.roundRect(r.x, r.y, r.w, r.h, r.r)
+      ctx.stroke()
+    }
+  }
+  for (const pathString of glyph.paths) {
+    ctx.stroke(new Path2D(pathString))
+  }
+  ctx.restore()
 
   return ctx.getImageData(0, 0, canvas.width, canvas.height)
 }
 
-function ensureBlimpIcons(map: MapLibreMap) {
-  Object.entries(fuelColors).forEach(([fuel, color]) => {
-    const id = `blimp-${fuel}`
+function ensureFuelMarkerIcons(map: MapLibreMap) {
+  ;(Object.keys(fuelColors) as Array<keyof typeof fuelColors>).forEach((fuel) => {
+    const id = `marker-${fuel}`
     if (!map.hasImage(id)) {
-      map.addImage(id, blimpIconImage(color), { pixelRatio: 2 })
+      map.addImage(id, fuelMarkerImage(fuel), { pixelRatio: 2 })
     }
   })
 }
@@ -703,7 +767,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         type: "geojson",
         data: projectsToGeoJson(filteredProjectsRef.current)
       })
-      ensureBlimpIcons(map)
+      ensureFuelMarkerIcons(map)
       map.addLayer({
         id: "projects",
         type: "symbol",
@@ -713,16 +777,16 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             "match",
             ["get", "fuelKey"],
             "solar",
-            "blimp-solar",
+            "marker-solar",
             "wind",
-            "blimp-wind",
+            "marker-wind",
             "storage",
-            "blimp-storage",
+            "marker-storage",
             "gas",
-            "blimp-gas",
+            "marker-gas",
             "hydro",
-            "blimp-hydro",
-            "blimp-other"
+            "marker-hydro",
+            "marker-other"
           ],
           "icon-size": [
             "interpolate",
@@ -873,7 +937,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             className={
               mapMode === "fullscreen"
                 ? "fixed inset-6 z-30 overflow-hidden rounded-md border border-border bg-card shadow-2xl"
-                : "relative w-full max-w-5xl overflow-hidden rounded-md border border-border bg-card shadow-md"
+                : "relative w-full max-w-7xl overflow-hidden rounded-md border border-border bg-card shadow-md"
             }
             style={mapMode === "fullscreen" ? undefined : { height: MAP_DEFAULT_HEIGHT }}
           >
