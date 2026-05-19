@@ -1,8 +1,10 @@
 "use client"
 
-import { useEffect, useId, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 
 import { AnimatedBeam } from "@/components/magicui/animated-beam"
+
+import { DataCenterScene } from "./data-center-scene"
 
 const PHASES = [
   { id: "filed", label: "Filed", detail: "Application submitted" },
@@ -170,8 +172,10 @@ function IsoDataCenter() {
       <div
         className="relative h-[420px]"
         role="img"
-        aria-label="Two 3D data-center campus models with queue input metrics"
+        aria-label="3D data-center campus model with queue input metrics"
       >
+        <DataCenterScene />
+
         <div className="absolute left-5 top-8 w-[150px] rounded-lg border border-border bg-background/85 p-3 backdrop-blur">
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
             Queue inputs
@@ -193,162 +197,26 @@ function IsoDataCenter() {
           </div>
         </div>
 
-        <DataCenterModel
-          className="absolute left-[168px] top-[184px]"
-          label="West Campus"
-          capacity="640 MW"
-          accent="hsl(var(--fuel-wind))"
-        />
+        <div className="absolute bottom-6 right-5 w-[190px] rounded-lg border border-primary/40 bg-background/90 p-3 shadow-xl backdrop-blur">
+          <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-primary">
+            Active campus
+          </p>
+          <div className="mt-1 flex items-center justify-between gap-3 text-xs">
+            <span className="font-medium">Houston Hyperscale</span>
+            <span className="rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] text-primary">
+              1.82 GW
+            </span>
+          </div>
+        </div>
 
-        <DataCenterModel
-          className="absolute right-[8px] top-[184px]"
-          label="Houston Hyperscale"
-          capacity="1.82 GW"
-          accent="hsl(var(--primary))"
-          active
-        />
-      </div>
-    </div>
-  )
-}
-
-function DataCenterModel({
-  className,
-  label,
-  capacity,
-  accent,
-  active = false
-}: {
-  className: string
-  label: string
-  capacity: string
-  accent: string
-  active?: boolean
-}) {
-  const gradientId = useId()
-  const roofGradientId = `${gradientId}-dc-roof`
-  const frontGradientId = `${gradientId}-dc-front`
-  const sideGradientId = `${gradientId}-dc-side`
-  const frontWindows = [
-    [33, 66, 47, 72],
-    [53, 75, 67, 81],
-    [73, 84, 87, 90],
-    [33, 80, 47, 86],
-    [53, 89, 67, 95],
-    [73, 98, 87, 104],
-    [33, 94, 47, 100],
-    [53, 103, 67, 109],
-    [73, 112, 87, 118]
-  ]
-  const sideWindows = [
-    [111, 78, 157, 58],
-    [111, 92, 157, 72],
-    [111, 106, 157, 86]
-  ]
-
-  return (
-    <div className={className}>
-      <svg
-        viewBox="0 0 190 155"
-        className="h-[125px] w-[154px] drop-shadow-2xl"
-        aria-hidden
-      >
-        <defs>
-          <linearGradient id={roofGradientId} x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="hsl(0 0% 22%)" />
-            <stop offset="100%" stopColor="hsl(0 0% 12%)" />
-          </linearGradient>
-          <linearGradient id={frontGradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="hsl(0 0% 16%)" />
-            <stop offset="100%" stopColor="hsl(0 0% 7%)" />
-          </linearGradient>
-          <linearGradient id={sideGradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="hsl(0 0% 11%)" />
-            <stop offset="100%" stopColor="hsl(0 0% 5%)" />
-          </linearGradient>
-        </defs>
-        <ellipse cx="96" cy="130" rx="78" ry="15" fill="hsl(var(--primary) / 0.1)" />
-        <polygon
-          points="18,46 94,14 172,48 96,82"
-          fill={`url(#${roofGradientId})`}
-          stroke="hsl(var(--border))"
-          strokeWidth="1"
-        />
-        <polygon
-          points="18,46 96,82 96,132 18,96"
-          fill={`url(#${frontGradientId})`}
-          stroke="hsl(var(--border))"
-          strokeWidth="1"
-        />
-        <polygon
-          points="96,82 172,48 172,98 96,132"
-          fill={`url(#${sideGradientId})`}
-          stroke="hsl(var(--border))"
-          strokeWidth="1"
-        />
-        <polygon points="52,44 94,27 138,47 96,65" fill={accent} opacity="0.16" />
-        <path d="M 58 42 L 94 28 L 132 46" fill="none" stroke={accent} strokeWidth="1.4" opacity="0.7" />
-        {frontWindows.map(([x1, y1, x2, y2], window) => {
-          const activeWindow = window % 3 === 0
-          return (
-            <path
-              key={window}
-              d={`M ${x1} ${y1} L ${x2} ${y2}`}
-              stroke={activeWindow ? accent : "hsl(0 0% 24%)"}
-              strokeWidth="4"
-              strokeLinecap="round"
-              opacity={activeWindow ? 0.9 : 0.65}
-            >
-              {activeWindow && (
-                <animate
-                  attributeName="opacity"
-                  values="0.35;1;0.35"
-                  dur={`${2.2 + (window % 5) * 0.2}s`}
-                  repeatCount="indefinite"
-                />
-              )}
-            </path>
-          )
-        })}
-        {sideWindows.map(([x1, y1, x2, y2], row) => (
-          <path
-            key={row}
-            d={`M ${x1} ${y1} L ${x2} ${y2}`}
-            stroke={row === 1 ? accent : "hsl(0 0% 22%)"}
-            strokeWidth="3"
-            strokeLinecap="round"
-            opacity={row === 1 ? 0.75 : 0.7}
-          />
-        ))}
-        <path d="M 30 98 L 94 127 L 158 98" fill="none" stroke={accent} strokeWidth="1.2" opacity="0.45" />
-      </svg>
-      <div
-        className={
-          active
-            ? "mt-1 rounded-lg border border-primary/40 bg-background/90 p-2 shadow-xl backdrop-blur"
-            : "mt-1 rounded-lg border border-border bg-background/85 p-2 shadow-xl backdrop-blur"
-        }
-      >
-        <p
-          className={
-            active
-              ? "text-[9px] font-semibold uppercase tracking-[0.16em] text-primary"
-              : "text-[9px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
-          }
-        >
-          {active ? "Active campus" : "Linked campus"}
-        </p>
-        <div className="mt-1 flex items-center justify-between gap-3 text-xs">
-          <span className="font-medium">{label}</span>
-          <span
-            className={
-              active
-                ? "rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] text-primary"
-                : "font-mono text-[10px] text-muted-foreground"
-            }
-          >
-            {capacity}
-          </span>
+        <div className="absolute bottom-8 left-5 w-[164px] rounded-lg border border-border bg-background/85 p-3 shadow-xl backdrop-blur">
+          <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Linked campus
+          </p>
+          <div className="mt-1 flex items-center justify-between gap-3 text-xs">
+            <span className="font-medium">West Campus</span>
+            <span className="font-mono text-[10px] text-muted-foreground">640 MW</span>
+          </div>
         </div>
       </div>
     </div>
