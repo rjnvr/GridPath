@@ -199,6 +199,46 @@ export type HealthData = {
   eventSeverityCounts: EventSeverityCount[]
 }
 
+export type HeadroomScore = "high" | "medium" | "low" | "saturated"
+
+export type HeadroomFuelBreakdown = {
+  fuelType: string
+  projectCount: number
+  mwQueued: number
+  mwEnergized: number
+}
+
+export type HeadroomNearbyProject = {
+  id: string
+  iso: string
+  queueId: string
+  projectName: string | null
+  fuelType: string | null
+  mwRequested: number | null
+  currentPhase: string | null
+  currentStatus: string | null
+  distanceMiles: number | null
+  lat: number | null
+  lng: number | null
+}
+
+export type HeadroomReport = {
+  generatedAt: string
+  center: { lat: number; lng: number }
+  radiusMiles: number
+  projectsInArea: number
+  mwQueued: number
+  mwEnergized: number
+  mwWithdrawn: number
+  medianQueueMonths: number | null
+  score: HeadroomScore
+  scoreRationale: string
+  isoCoverage: string[]
+  fuelBreakdown: HeadroomFuelBreakdown[]
+  nearbySubstations: NearbySubstation[]
+  nearbyProjects: HeadroomNearbyProject[]
+}
+
 export type WatchlistFilter = {
   iso: string | null
   fuelType: string | null

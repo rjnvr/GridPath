@@ -3,6 +3,10 @@ import type {
   DashboardData,
   FuelMixTrend,
   GridProject,
+  HeadroomFuelBreakdown,
+  HeadroomNearbyProject,
+  HeadroomReport,
+  HeadroomScore,
   HealthData,
   IsoCoverage,
   MonthlyChangeTrend,
@@ -857,6 +861,248 @@ export type LandingStats = {
   latestSnapshotAt: string | null
   isoBreakdown: { iso: string; projectCount: number }[]
   recentChanges: RecentChange[]
+}
+
+type HeadroomAggregateRow = {
+  projects_in_area: string | number
+  mw_queued: string | number | null
+  mw_energized: string | number | null
+  mw_withdrawn: string | number | null
+  median_queue_months: string | number | null
+  iso_list: string[] | null
+}
+
+type HeadroomFuelRow = {
+  fuel_type: string | null
+  project_count: string | number
+  mw_queued: string | number | null
+  mw_energized: string | number | null
+}
+
+type HeadroomNearbyProjectRow = {
+  id: string
+  iso: string
+  queue_id: string
+  project_name: string | null
+  fuel_type: string | null
+  mw_requested: string | number | null
+  current_phase: string | null
+  current_status: string | null
+  lat: string | number | null
+  lng: string | number | null
+  distance_miles: string | number | null
+}
+
+function computeHeadroomScore(mwQueued: number, mwEnergized: number): {
+  score: HeadroomScore
+  rationale: string
+} {
+  // Heuristic, not authoritative. Bands are tuned for a 25-mile radius and can be
+  // adjusted later when we have better ground truth from transmission constraints.
+  if (mwQueued >= 5000) {
+    return {
+      score: "saturated",
+      rationale: `${mwQueued.toLocaleString()} MW already queued in this area — competition for capacity is intense and lead times are likely longest in the ISO.`
+    }
+  }
+  if (mwQueued >= 2000) {
+    return {
+      score: "low",
+      rationale: `${mwQueued.toLocaleString()} MW queued plus ${mwEnergized.toLocaleString()} MW already energized. Expect multi-year queue progression and meaningful capacity competition.`
+    }
+  }
+  if (mwQueued >= 500) {
+    return {
+      score: "medium",
+      rationale: `${mwQueued.toLocaleString()} MW queued. Some competing demand exists; substations may still have headroom but require a study to confirm.`
+    }
+  }
+  return {
+    score: "high",
+    rationale: `Only ${mwQueued.toLocaleString()} MW currently queued nearby — relatively quiet corridor with likely faster interconnect timelines.`
+  }
+}
+
+export async function getHeadroomReport(
+  lat: number,
+  lng: number,
+  radiusMiles = 25
+): Promise<HeadroomReport | null> {
+  if (!process.env.DATABASE_URL) {
+    return null
+  }
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return null
+  }
+  const clampedRadius = Math.max(5, Math.min(150, radiusMiles))
+  const radiusMeters = clampedRadius * 1609.344
+  const sql = getSql()
+
+  try {
+    const [aggregateRows, fuelRows, substationRows, nearbyProjectRows] = await Promise.all([
+      sql`
+        with nearby as (
+          select
+            p.id,
+            p.iso,
+            p.mw_requested,
+            p.fuel_type,
+            p.current_status,
+            p.current_phase,
+            p.filed_date,
+            p.energized_date,
+            p.withdrawn_date
+          from projects p
+          where p.geom is not null
+            and st_dwithin(
+              p.geom::geography,
+              st_setsrid(st_makepoint(${lng}, ${lat}), 4326)::geography,
+              ${radiusMeters}
+            )
+        ),
+        durations as (
+          select extract(epoch from (coalesce(energized_date, current_date) - filed_date)) / (60 * 60 * 24 * 30.4375) as months
+          from nearby
+          where filed_date is not null
+            and withdrawn_date is null
+        )
+        select
+          (select count(*) from nearby)::bigint as projects_in_area,
+          coalesce((
+            select sum(mw_requested)
+            from nearby
+            where withdrawn_date is null
+              and energized_date is null
+          ), 0)::numeric as mw_queued,
+          coalesce((
+            select sum(mw_requested) from nearby where energized_date is not null
+          ), 0)::numeric as mw_energized,
+          coalesce((
+            select sum(mw_requested) from nearby where withdrawn_date is not null
+          ), 0)::numeric as mw_withdrawn,
+          (select percentile_cont(0.5) within group (order by months) from durations)::numeric as median_queue_months,
+          (select array_agg(distinct iso order by iso) from nearby) as iso_list
+      `,
+      sql`
+        select
+          coalesce(p.fuel_type, 'unknown') as fuel_type,
+          count(*)::bigint as project_count,
+          coalesce(sum(p.mw_requested) filter (
+            where p.withdrawn_date is null and p.energized_date is null
+          ), 0)::numeric as mw_queued,
+          coalesce(sum(p.mw_requested) filter (where p.energized_date is not null), 0)::numeric as mw_energized
+        from projects p
+        where p.geom is not null
+          and st_dwithin(
+            p.geom::geography,
+            st_setsrid(st_makepoint(${lng}, ${lat}), 4326)::geography,
+            ${radiusMeters}
+          )
+        group by coalesce(p.fuel_type, 'unknown')
+        order by mw_queued desc nulls last, project_count desc
+      `,
+      sql`
+        select
+          s.id,
+          s.hifld_id,
+          s.name,
+          s.owner,
+          s.voltage_kv,
+          s.lat,
+          s.lng,
+          round((
+            st_distancesphere(s.geom, st_setsrid(st_makepoint(${lng}, ${lat}), 4326)) / 1609.344
+          )::numeric, 1) as distance_miles
+        from substations s
+        where s.geom is not null
+          and st_dwithin(
+            s.geom::geography,
+            st_setsrid(st_makepoint(${lng}, ${lat}), 4326)::geography,
+            ${radiusMeters}
+          )
+        order by s.geom <-> st_setsrid(st_makepoint(${lng}, ${lat}), 4326)
+        limit 8
+      `,
+      sql`
+        select
+          p.id,
+          p.iso,
+          p.queue_id,
+          p.project_name,
+          p.fuel_type,
+          p.mw_requested,
+          p.current_phase,
+          p.current_status,
+          p.lat,
+          p.lng,
+          round((
+            st_distancesphere(p.geom, st_setsrid(st_makepoint(${lng}, ${lat}), 4326)) / 1609.344
+          )::numeric, 1) as distance_miles
+        from projects p
+        where p.geom is not null
+          and st_dwithin(
+            p.geom::geography,
+            st_setsrid(st_makepoint(${lng}, ${lat}), 4326)::geography,
+            ${radiusMeters}
+          )
+        order by p.mw_requested desc nulls last, p.geom <-> st_setsrid(st_makepoint(${lng}, ${lat}), 4326)
+        limit 25
+      `
+    ])
+
+    const aggregate = (aggregateRows as HeadroomAggregateRow[])[0]
+    const mwQueued = numberOrNull(aggregate?.mw_queued ?? 0) ?? 0
+    const mwEnergized = numberOrNull(aggregate?.mw_energized ?? 0) ?? 0
+    const mwWithdrawn = numberOrNull(aggregate?.mw_withdrawn ?? 0) ?? 0
+    const medianQueueMonths = numberOrNull(aggregate?.median_queue_months ?? null)
+    const projectsInArea = countValue(aggregate?.projects_in_area ?? 0)
+    const { score, rationale } = computeHeadroomScore(mwQueued, mwEnergized)
+
+    const fuelBreakdown: HeadroomFuelBreakdown[] = (fuelRows as HeadroomFuelRow[]).map((row) => ({
+      fuelType: row.fuel_type ?? "unknown",
+      projectCount: countValue(row.project_count),
+      mwQueued: numberOrNull(row.mw_queued) ?? 0,
+      mwEnergized: numberOrNull(row.mw_energized) ?? 0
+    }))
+
+    const nearbySubstations = (substationRows as NearbySubstationRow[]).map(mapNearbySubstation)
+
+    const nearbyProjects: HeadroomNearbyProject[] = (nearbyProjectRows as HeadroomNearbyProjectRow[]).map(
+      (row) => ({
+        id: row.id,
+        iso: row.iso,
+        queueId: row.queue_id,
+        projectName: row.project_name,
+        fuelType: row.fuel_type,
+        mwRequested: numberOrNull(row.mw_requested),
+        currentPhase: row.current_phase,
+        currentStatus: row.current_status,
+        distanceMiles: numberOrNull(row.distance_miles),
+        lat: numberOrNull(row.lat),
+        lng: numberOrNull(row.lng)
+      })
+    )
+
+    return {
+      generatedAt: new Date().toISOString(),
+      center: { lat, lng },
+      radiusMiles: clampedRadius,
+      projectsInArea,
+      mwQueued,
+      mwEnergized,
+      mwWithdrawn,
+      medianQueueMonths,
+      score,
+      scoreRationale: rationale,
+      isoCoverage: aggregate?.iso_list ?? [],
+      fuelBreakdown,
+      nearbySubstations,
+      nearbyProjects
+    }
+  } catch (error) {
+    if (isUndefinedRelationError(error)) return null
+    throw error
+  }
 }
 
 export async function getLandingStats(): Promise<LandingStats> {
