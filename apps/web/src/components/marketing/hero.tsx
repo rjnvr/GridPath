@@ -4,6 +4,7 @@ import Link from "next/link"
 import { AnimatedGradientText } from "@/components/magicui/animated-gradient-text"
 import { AuroraText } from "@/components/magicui/aurora-text"
 import { BorderBeam } from "@/components/magicui/border-beam"
+import { TypingAnimation } from "@/components/magicui/typing-animation"
 import { Button } from "@/components/ui/button"
 
 import { GridTopology } from "./grid-topology"
@@ -61,6 +62,16 @@ export function Hero({ latestSnapshotAt }: HeroProps) {
               GridPath ingests the ERCOT and CAISO queue reports daily, normalizes them into one
               schema, and records every field that changes, so you can stop diffing spreadsheets.
             </p>
+            <div className="mt-6 flex max-w-2xl items-center gap-3 rounded-md border border-border bg-card/60 px-3 py-2 font-mono text-xs text-muted-foreground shadow-[0_14px_40px_hsl(var(--primary)/0.04)] backdrop-blur">
+              <span className="flex h-2 w-2 shrink-0 rounded-full bg-primary shadow-[0_0_18px_hsl(var(--primary)/0.55)]" />
+              <TypingAnimation
+                phrases={[
+                  "diffing ERCOT queue changes...",
+                  "normalizing CAISO interconnection fields...",
+                  "flagging MW revisions and status moves..."
+                ]}
+              />
+            </div>
             <div className="mt-10 flex flex-wrap items-center gap-3">
               <div className="relative isolate overflow-hidden rounded-md">
                 <Button asChild size="lg">
