@@ -8,6 +8,7 @@ import type {
   HeadroomReport,
   HeadroomScore,
   HealthData,
+  SubstationDetailData,
   IsoCoverage,
   MonthlyChangeTrend,
   MonthlyProjectTrend,
@@ -1098,6 +1099,169 @@ export async function getHeadroomReport(
       fuelBreakdown,
       nearbySubstations,
       nearbyProjects
+    }
+  } catch (error) {
+    if (isUndefinedRelationError(error)) return null
+    throw error
+  }
+}
+
+export async function getSubstationDetail(
+  substationId: string,
+  radiusMiles = 10
+): Promise<SubstationDetailData | null> {
+  if (!process.env.DATABASE_URL) return null
+  const clampedRadius = Math.max(2, Math.min(50, radiusMiles))
+  const radiusMeters = clampedRadius * 1609.344
+  const sql = getSql()
+
+  try {
+    const substationRows = await sql`
+      select id, hifld_id, name, owner, voltage_kv, lat, lng
+      from substations
+      where id = ${substationId}
+      limit 1
+    `
+    const substationRow = (substationRows as SubstationRow[])[0]
+    if (!substationRow) return null
+    const substation = mapSubstation(substationRow)
+    if (substation.lat === null || substation.lng === null) {
+      return {
+        substation,
+        radiusMiles: clampedRadius,
+        projectCount: 0,
+        mwQueued: 0,
+        mwEnergized: 0,
+        fuelBreakdown: [],
+        nearbyProjects: [],
+        recentEvents: []
+      }
+    }
+
+    const [aggregateRows, fuelRows, nearbyProjectRows, recentEventRows] = await Promise.all([
+      sql`
+        select
+          count(*)::bigint as project_count,
+          coalesce(sum(mw_requested) filter (
+            where withdrawn_date is null and energized_date is null
+          ), 0)::numeric as mw_queued,
+          coalesce(sum(mw_requested) filter (where energized_date is not null), 0)::numeric as mw_energized
+        from projects p
+        where p.geom is not null
+          and st_dwithin(
+            p.geom::geography,
+            (select geom::geography from substations where id = ${substationId}),
+            ${radiusMeters}
+          )
+      `,
+      sql`
+        select
+          coalesce(fuel_type, 'unknown') as fuel_type,
+          count(*)::bigint as project_count,
+          coalesce(sum(mw_requested) filter (
+            where withdrawn_date is null and energized_date is null
+          ), 0)::numeric as mw_queued,
+          coalesce(sum(mw_requested) filter (where energized_date is not null), 0)::numeric as mw_energized
+        from projects p
+        where p.geom is not null
+          and st_dwithin(
+            p.geom::geography,
+            (select geom::geography from substations where id = ${substationId}),
+            ${radiusMeters}
+          )
+        group by coalesce(fuel_type, 'unknown')
+        order by mw_queued desc nulls last, project_count desc
+      `,
+      sql`
+        with sub as (select geom from substations where id = ${substationId})
+        select
+          p.id, p.iso, p.queue_id, p.project_name, p.fuel_type, p.mw_requested,
+          p.current_phase, p.current_status,
+          round((st_distancesphere(p.geom, (select geom from sub)) / 1609.344)::numeric, 1) as distance_miles
+        from projects p
+        where p.geom is not null
+          and st_dwithin(
+            p.geom::geography,
+            (select geom::geography from sub),
+            ${radiusMeters}
+          )
+        order by p.mw_requested desc nulls last, p.geom <-> (select geom from sub)
+        limit 25
+      `,
+      sql`
+        with sub as (select geom from substations where id = ${substationId})
+        select
+          e.id, e.project_id, p.iso, p.queue_id, p.project_name,
+          r.source_url, r.source_name,
+          e.event_type, e.severity, e.title, e.description,
+          e.field_name, e.old_value, e.new_value, e.delta_mw,
+          e.event_at, e.created_at
+        from queue_events e
+        join projects p on p.id = e.project_id
+        left join source_reports r on r.id = e.source_report_id
+        where p.geom is not null
+          and st_dwithin(
+            p.geom::geography,
+            (select geom::geography from sub),
+            ${radiusMeters}
+          )
+          and e.event_at >= now() - interval '30 days'
+        order by e.event_at desc
+        limit 50
+      `
+    ])
+
+    const aggregate = (aggregateRows as Array<{
+      project_count: string | number
+      mw_queued: string | number | null
+      mw_energized: string | number | null
+    }>)[0]
+
+    const fuelBreakdown = (fuelRows as Array<{
+      fuel_type: string | null
+      project_count: string | number
+      mw_queued: string | number | null
+      mw_energized: string | number | null
+    }>).map((row) => ({
+      fuelType: row.fuel_type ?? "unknown",
+      projectCount: countValue(row.project_count),
+      mwQueued: numberOrNull(row.mw_queued) ?? 0,
+      mwEnergized: numberOrNull(row.mw_energized) ?? 0
+    }))
+
+    const nearbyProjects = (nearbyProjectRows as Array<{
+      id: string
+      iso: string
+      queue_id: string
+      project_name: string | null
+      fuel_type: string | null
+      mw_requested: string | number | null
+      current_phase: string | null
+      current_status: string | null
+      distance_miles: string | number | null
+    }>).map((row) => ({
+      id: row.id,
+      iso: row.iso,
+      queueId: row.queue_id,
+      projectName: row.project_name,
+      fuelType: row.fuel_type,
+      mwRequested: numberOrNull(row.mw_requested),
+      currentPhase: row.current_phase,
+      currentStatus: row.current_status,
+      distanceMiles: numberOrNull(row.distance_miles)
+    }))
+
+    const recentEvents = (recentEventRows as QueueEventRow[]).map(mapQueueEvent)
+
+    return {
+      substation,
+      radiusMiles: clampedRadius,
+      projectCount: countValue(aggregate?.project_count ?? 0),
+      mwQueued: numberOrNull(aggregate?.mw_queued ?? 0) ?? 0,
+      mwEnergized: numberOrNull(aggregate?.mw_energized ?? 0) ?? 0,
+      fuelBreakdown,
+      nearbyProjects,
+      recentEvents
     }
   } catch (error) {
     if (isUndefinedRelationError(error)) return null

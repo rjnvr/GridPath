@@ -3,6 +3,7 @@
 import type { HeadroomReport, HeadroomScore } from "@gridpath/shared"
 import { Loader2, MapPin, Zap } from "lucide-react"
 import maplibregl, { type Map as MapLibreMap, type Marker } from "maplibre-gl"
+import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
@@ -337,7 +338,11 @@ function ReportPanel({ report }: { report: HeadroomReport }) {
           </CardHeader>
           <CardContent className="space-y-1.5">
             {report.nearbySubstations.slice(0, 6).map((sub) => (
-              <div key={sub.id} className="flex items-center justify-between text-sm">
+              <Link
+                key={sub.id}
+                href={`/substations/${sub.id}`}
+                className="flex items-center justify-between rounded px-1 py-0.5 text-sm hover:bg-card"
+              >
                 <span className="truncate pr-2 text-muted-foreground">
                   {sub.name ?? sub.hifldId}
                 </span>
@@ -347,7 +352,7 @@ function ReportPanel({ report }: { report: HeadroomReport }) {
                     {sub.distanceMiles?.toFixed(1) ?? "?"} mi
                   </span>
                 </span>
-              </div>
+              </Link>
             ))}
           </CardContent>
         </Card>
