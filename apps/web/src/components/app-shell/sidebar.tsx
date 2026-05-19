@@ -5,6 +5,7 @@ import {
   BarChart3,
   Bookmark,
   LayoutDashboard,
+  MapPin,
   PanelLeftClose,
   PanelLeftOpen,
   Search,
@@ -20,6 +21,7 @@ import { cn } from "@/lib/utils"
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/headroom", label: "Headroom", icon: MapPin },
   { href: "/search", label: "Search", icon: Search },
   { href: "/analysis", label: "Analysis", icon: BarChart3 },
   { href: "/watchlists", label: "Watchlists", icon: Bookmark },
