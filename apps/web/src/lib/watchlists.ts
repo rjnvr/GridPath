@@ -134,6 +134,24 @@ export async function createWatchlist(
   }
 }
 
+export async function setWatchlistEmailNotifications(
+  userId: string,
+  watchlistId: string,
+  notifyEmail: boolean
+): Promise<void> {
+  const sql = getSql()
+  try {
+    await sql`
+      update watchlists
+      set notify_email = ${notifyEmail},
+          updated_at = now()
+      where id = ${watchlistId} and user_id = ${userId}
+    `
+  } catch (error) {
+    throwIfNotProvisioned(error)
+  }
+}
+
 export async function deleteWatchlist(userId: string, watchlistId: string): Promise<void> {
   const sql = getSql()
   try {

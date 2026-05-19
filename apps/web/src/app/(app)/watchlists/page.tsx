@@ -9,7 +9,7 @@ import { auth } from "@/lib/auth"
 import { WatchlistsNotProvisionedError, listWatchlists } from "@/lib/watchlists"
 import type { Watchlist } from "@gridpath/shared"
 
-import { createWatchlistAction, deleteWatchlistAction } from "./actions"
+import { createWatchlistAction, deleteWatchlistAction, updateWatchlistEmailAction } from "./actions"
 
 export const dynamic = "force-dynamic"
 
@@ -52,6 +52,11 @@ function summarizeFilter(filter: {
   return parts.join(" · ")
 }
 
+function formatDateTime(value: string | null): string {
+  if (!value) return "Not sent yet"
+  return new Date(value).toLocaleString()
+}
+
 export default async function WatchlistsPage() {
   const session = await auth()
   const userId = session?.user?.id
@@ -75,7 +80,7 @@ export default async function WatchlistsPage() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Watchlists</h1>
         <p className="text-sm text-muted-foreground">
-          Save a filtered view of the queue. Daily email digests of matching changes are coming next.
+          Save a filtered view of the queue and receive daily email digests when matching projects move.
         </p>
       </header>
 
@@ -142,6 +147,19 @@ export default async function WatchlistsPage() {
                   <Label htmlFor="ownerCompany">Owner company contains</Label>
                   <Input id="ownerCompany" name="ownerCompany" placeholder="e.g. NextEra" />
                 </div>
+                <label className="flex items-start gap-3 rounded-md border border-border bg-background p-3 text-sm md:col-span-2">
+                  <input
+                    type="checkbox"
+                    name="notifyEmail"
+                    className="mt-0.5 h-4 w-4 rounded border-border bg-background"
+                  />
+                  <span>
+                    <span className="block font-medium">Notify me by email</span>
+                    <span className="mt-1 block text-muted-foreground">
+                      Send a digest when critical, important, or new-project events match this watchlist.
+                    </span>
+                  </span>
+                </label>
                 <div className="md:col-span-2">
                   <Button type="submit">Create watchlist</Button>
                 </div>
@@ -170,13 +188,29 @@ export default async function WatchlistsPage() {
                         {wl.name}
                       </Link>
                       <p className="mt-1 truncate text-sm text-muted-foreground">{summarizeFilter(wl.filter)}</p>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Email alerts:{" "}
+                        <span className={wl.notifyEmail ? "text-emerald-300" : "text-muted-foreground"}>
+                          {wl.notifyEmail ? "On" : "Off"}
+                        </span>
+                        {" "}· Last sent: {formatDateTime(wl.lastEmailedAt)}
+                      </p>
                     </div>
-                    <form action={deleteWatchlistAction}>
-                      <input type="hidden" name="id" value={wl.id} />
-                      <Button type="submit" variant="ghost" size="sm">
-                        Delete
-                      </Button>
-                    </form>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <form action={updateWatchlistEmailAction}>
+                        <input type="hidden" name="id" value={wl.id} />
+                        <input type="hidden" name="notifyEmail" value={wl.notifyEmail ? "false" : "true"} />
+                        <Button type="submit" variant="outline" size="sm">
+                          {wl.notifyEmail ? "Disable email" : "Enable email"}
+                        </Button>
+                      </form>
+                      <form action={deleteWatchlistAction}>
+                        <input type="hidden" name="id" value={wl.id} />
+                        <Button type="submit" variant="ghost" size="sm">
+                          Delete
+                        </Button>
+                      </form>
+                    </div>
                   </li>
                 ))}
               </ul>

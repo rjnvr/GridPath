@@ -1233,8 +1233,8 @@ function SaveViewDialog({ filters }: { filters: FilterState }) {
         <DialogHeader>
           <DialogTitle>Save this view</DialogTitle>
           <DialogDescription>
-            Pin the current filters so you can come back to them — and (soon) get emailed when matching
-            projects change.
+            Pin the current filters so you can come back to them and get emailed when matching
+            projects move.
           </DialogDescription>
         </DialogHeader>
         <form action={handleSubmit} className="space-y-4">
@@ -1253,6 +1253,19 @@ function SaveViewDialog({ filters }: { filters: FilterState }) {
           <div className="rounded-md border border-border bg-background p-3 text-sm text-muted-foreground">
             {filterSummary(filters)}
           </div>
+          <label className="flex items-start gap-3 rounded-md border border-border bg-background p-3 text-sm">
+            <input
+              type="checkbox"
+              name="notifyEmail"
+              className="mt-0.5 h-4 w-4 rounded border-border bg-background"
+            />
+            <span>
+              <span className="block font-medium text-foreground">Notify me by email</span>
+              <span className="mt-1 block text-muted-foreground">
+                Send a digest when critical, important, or new-project events match this view.
+              </span>
+            </span>
+          </label>
           <input type="hidden" name="iso" value={filters.iso === "all" ? "" : filters.iso} />
           <input type="hidden" name="fuelType" value={filters.fuelType === "all" ? "" : filters.fuelType} />
           <input type="hidden" name="phase" value={filters.phase === "all" ? "" : filters.phase} />
