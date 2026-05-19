@@ -108,6 +108,14 @@ type SubstationFeatureCollection = GeoJSON.FeatureCollection<
   }
 >
 
+type MapLabelFeatureCollection = GeoJSON.FeatureCollection<
+  GeoJSON.Point,
+  {
+    name: string
+    kind: "city" | "state"
+  }
+>
+
 type FilterState = {
   iso: string
   fuelType: string
@@ -128,6 +136,62 @@ type PanelMode = "projects" | "events"
 type MapMode = "normal" | "fullscreen"
 
 const MAP_DEFAULT_HEIGHT = 620
+
+const MAP_LABELS: MapLabelFeatureCollection = {
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      properties: { name: "TEXAS", kind: "state" },
+      geometry: { type: "Point", coordinates: [-99.9, 31.15] }
+    },
+    {
+      type: "Feature",
+      properties: { name: "CALIFORNIA", kind: "state" },
+      geometry: { type: "Point", coordinates: [-119.7, 36.7] }
+    },
+    {
+      type: "Feature",
+      properties: { name: "Houston", kind: "city" },
+      geometry: { type: "Point", coordinates: [-95.3698, 29.7604] }
+    },
+    {
+      type: "Feature",
+      properties: { name: "Dallas", kind: "city" },
+      geometry: { type: "Point", coordinates: [-96.797, 32.7767] }
+    },
+    {
+      type: "Feature",
+      properties: { name: "Austin", kind: "city" },
+      geometry: { type: "Point", coordinates: [-97.7431, 30.2672] }
+    },
+    {
+      type: "Feature",
+      properties: { name: "San Antonio", kind: "city" },
+      geometry: { type: "Point", coordinates: [-98.4936, 29.4241] }
+    },
+    {
+      type: "Feature",
+      properties: { name: "Los Angeles", kind: "city" },
+      geometry: { type: "Point", coordinates: [-118.2437, 34.0522] }
+    },
+    {
+      type: "Feature",
+      properties: { name: "San Francisco", kind: "city" },
+      geometry: { type: "Point", coordinates: [-122.4194, 37.7749] }
+    },
+    {
+      type: "Feature",
+      properties: { name: "San Diego", kind: "city" },
+      geometry: { type: "Point", coordinates: [-117.1611, 32.7157] }
+    },
+    {
+      type: "Feature",
+      properties: { name: "Sacramento", kind: "city" },
+      geometry: { type: "Point", coordinates: [-121.4944, 38.5816] }
+    }
+  ]
+}
 
 type FuelGlyph = {
   rects?: Array<{ x: number; y: number; w: number; h: number; r: number }>
@@ -300,6 +364,7 @@ function tileStyle() {
   }
   return {
     version: 8,
+    glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
     sources: {
       darkMatter: {
         type: "raster",
@@ -746,6 +811,77 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right")
 
     map.on("load", () => {
+      map.addSource("map-labels", {
+        type: "geojson",
+        data: MAP_LABELS
+      })
+      map.addLayer({
+        id: "state-labels",
+        type: "symbol",
+        source: "map-labels",
+        filter: ["==", ["get", "kind"], "state"],
+        minzoom: 3,
+        layout: {
+          "text-field": ["get", "name"],
+          "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+          "text-size": ["interpolate", ["linear"], ["zoom"], 3, 12, 6, 18],
+          "text-letter-spacing": 0.08,
+          "text-allow-overlap": false,
+          "text-ignore-placement": false
+        },
+        paint: {
+          "text-color": "#f5b942",
+          "text-halo-color": "rgba(10, 11, 13, 0.92)",
+          "text-halo-width": 2.2,
+          "text-halo-blur": 0.4,
+          "text-opacity": 0.92
+        }
+      })
+      map.addLayer({
+        id: "city-labels",
+        type: "symbol",
+        source: "map-labels",
+        filter: ["==", ["get", "kind"], "city"],
+        minzoom: 4.4,
+        layout: {
+          "text-field": ["get", "name"],
+          "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
+          "text-size": ["interpolate", ["linear"], ["zoom"], 4, 11, 7, 15],
+          "text-offset": [0, 0.65],
+          "text-variable-anchor": ["top", "bottom", "left", "right"],
+          "text-radial-offset": 0.35,
+          "text-allow-overlap": false,
+          "text-ignore-placement": false
+        },
+        paint: {
+          "text-color": [
+            "match",
+            ["get", "name"],
+            "Houston",
+            "#4cb8c4",
+            "Dallas",
+            "#5b9bd5",
+            "Austin",
+            "#a78bfa",
+            "San Antonio",
+            "#e07b6d",
+            "Los Angeles",
+            "#f5b942",
+            "San Francisco",
+            "#4cb8c4",
+            "San Diego",
+            "#5b9bd5",
+            "Sacramento",
+            "#a78bfa",
+            "#f5b942"
+          ],
+          "text-halo-color": "rgba(10, 11, 13, 0.94)",
+          "text-halo-width": 1.8,
+          "text-halo-blur": 0.25,
+          "text-opacity": 0.96
+        }
+      })
+
       map.addSource("substations", {
         type: "geojson",
         data: substationsToGeoJson(initialData.substations)
