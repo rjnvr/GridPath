@@ -6,10 +6,11 @@ interface LogoMarkProps {
 }
 
 /**
- * GridPath mark — a stepped path rising through three implied grid rows,
- * ending in a node. Reads at 16px and up. Uses currentColor for the path so it
- * can be themed (defaults to the primary teal when placed in a primary-text
- * container).
+ * GridPath mark — an abstract "path through a grid" glyph:
+ * a diagonal stroke (the path) flanked by three stacked phase nodes,
+ * with the middle node filled (the tracked project).
+ *
+ * Reads at 16px and up. Uses currentColor so it inherits the surrounding text color.
  */
 export function LogoMark({ className, title }: LogoMarkProps) {
   return (
@@ -21,22 +22,19 @@ export function LogoMark({ className, title }: LogoMarkProps) {
       className={cn("text-primary", className)}
       fill="none"
     >
-      {/* faint queue-row guides */}
-      <g stroke="currentColor" strokeOpacity="0.18" strokeWidth="1" strokeLinecap="round">
-        <line x1="3" y1="18.5" x2="21" y2="18.5" />
-        <line x1="3" y1="12" x2="21" y2="12" />
-        <line x1="3" y1="5.5" x2="21" y2="5.5" />
-      </g>
-      {/* stepped path through the rows */}
+      {/* The path — diagonal stroke bottom-left → top-right */}
       <path
-        d="M3 18.5 H9 V12 H15 V5.5 H20.5"
+        d="M 4.5 19.5 L 16.5 5"
         stroke="currentColor"
-        strokeWidth="2.25"
+        strokeWidth="2.4"
         strokeLinecap="round"
-        strokeLinejoin="round"
       />
-      {/* terminal node */}
-      <circle cx="20.5" cy="5.5" r="2" fill="currentColor" />
+      {/* Phase nodes, vertical column on the right */}
+      <circle cx="20" cy="5.5" r="1.4" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="20" cy="12" r="2" fill="currentColor" />
+      <circle cx="20" cy="18.5" r="1.4" stroke="currentColor" strokeWidth="1.5" />
+      {/* Pulse halo around the tracked node */}
+      <circle cx="20" cy="12" r="4.5" stroke="currentColor" strokeOpacity="0.18" strokeWidth="1" />
     </svg>
   )
 }
