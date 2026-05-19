@@ -1,5 +1,6 @@
 import type { AnalysisData, FuelMixTrend, MonthlyChangeTrend, MonthlyProjectTrend, RecentChange } from "@gridpath/shared"
 
+import { MetricBar } from "@/components/analysis/metric-bar"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { getAnalysisData } from "@/lib/data"
 
@@ -13,18 +14,14 @@ function maxValue(values: number[]) {
   return Math.max(1, ...values)
 }
 
-function barWidth(value: number, max: number) {
-  return `${Math.max(4, Math.round((value / max) * 100))}%`
-}
-
 export default async function AnalysisPage() {
   const data = await getAnalysisData()
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-6 py-6">
-      <header>
+      <header className="border-b border-border pb-4">
         <h1 className="text-2xl font-semibold tracking-tight">Analysis</h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="mt-1 text-sm text-muted-foreground">
           Trends, changes, and data coverage for ERCOT and CAISO interconnection queues.
         </p>
       </header>
@@ -67,7 +64,7 @@ function CoverageCards({ data }: { data: AnalysisData }) {
                 <CardTitle>{coverage.iso}</CardTitle>
                 <CardDescription>{coverage.label}</CardDescription>
               </div>
-              <span className="rounded-md bg-primary/15 px-2 py-1 text-xs text-primary">
+              <span className="inline-flex items-center gap-1.5 rounded-sm border border-primary/30 bg-primary/10 px-2 py-1 font-mono text-[11px] tabular-nums text-primary">
                 {coverage.reportCount.toLocaleString()} reports
               </span>
             </div>
@@ -210,20 +207,6 @@ function RecentChangesCard({ rows }: { rows: RecentChange[] }) {
         </div>
       </CardContent>
     </Card>
-  )
-}
-
-function MetricBar({ label, value, max }: { label: string; value: number; max: number }) {
-  return (
-    <div className="grid gap-2 text-sm">
-      <div className="flex items-center justify-between gap-3">
-        <span className="truncate text-muted-foreground">{label}</span>
-        <span className="font-mono">{value.toLocaleString()}</span>
-      </div>
-      <div className="h-2 rounded bg-background">
-        <div className="h-full rounded bg-primary" style={{ width: barWidth(value, max) }} />
-      </div>
-    </div>
   )
 }
 

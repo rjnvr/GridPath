@@ -14,6 +14,7 @@ import {
 import { ArrowUpDown, Search, X } from "lucide-react"
 import { useMemo, useState } from "react"
 
+import { fuelIconFor, fuelTokenClassFor } from "@/components/icons/fuel"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 
@@ -27,8 +28,22 @@ type SearchFilters = {
 }
 
 const columns: ColumnDef<GridProject>[] = [
-  { accessorKey: "iso", header: "ISO" },
-  { accessorKey: "queueId", header: "Queue ID" },
+  {
+    accessorKey: "iso",
+    header: "ISO",
+    cell: ({ row }) => (
+      <span className="inline-flex items-center rounded-sm border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+        {row.original.iso}
+      </span>
+    )
+  },
+  {
+    accessorKey: "queueId",
+    header: "Queue ID",
+    cell: ({ row }) => (
+      <span className="font-mono text-xs text-muted-foreground">{row.original.queueId}</span>
+    )
+  },
   {
     accessorKey: "projectName",
     header: "Project",
@@ -37,9 +52,27 @@ const columns: ColumnDef<GridProject>[] = [
   {
     accessorKey: "mwRequested",
     header: "MW",
-    cell: ({ row }) => row.original.mwRequested?.toLocaleString() ?? "—"
+    cell: ({ row }) => (
+      <span className="font-mono tabular-nums">
+        {row.original.mwRequested?.toLocaleString() ?? "—"}
+      </span>
+    )
   },
-  { accessorKey: "fuelType", header: "Fuel", cell: ({ row }) => row.original.fuelType ?? "—" },
+  {
+    accessorKey: "fuelType",
+    header: "Fuel",
+    cell: ({ row }) => {
+      const fuel = (row.original.fuelType ?? "other").toLowerCase()
+      const Icon = fuelIconFor(fuel)
+      const tone = fuelTokenClassFor(fuel)
+      return (
+        <span className="inline-flex items-center gap-1.5 text-xs">
+          <Icon size={14} className={tone} />
+          <span className="capitalize">{row.original.fuelType ?? "—"}</span>
+        </span>
+      )
+    }
+  },
   { accessorKey: "currentPhase", header: "Phase", cell: ({ row }) => row.original.currentPhase ?? "—" },
   { accessorKey: "currentStatus", header: "Status", cell: ({ row }) => row.original.currentStatus ?? "—" },
   { accessorKey: "ownerCompany", header: "Owner", cell: ({ row }) => row.original.ownerCompany ?? "—" },
@@ -249,7 +282,7 @@ export function ProjectSearch({ data }: { data: DashboardData }) {
                   <tr
                     key={row.id}
                     onClick={() => setSelectedProject(row.original)}
-                    className="cursor-pointer border-b border-border/70 hover:bg-white/5"
+                    className="cursor-pointer border-b border-border/70 hover:bg-muted/40"
                   >
                     {row.getVisibleCells().map((cell) => (
                       <td key={cell.id} className="px-4 py-3">
@@ -273,7 +306,7 @@ export function ProjectSearch({ data }: { data: DashboardData }) {
 
 function ProjectDetail({ project, onClose }: { project: GridProject; onClose: () => void }) {
   return (
-    <aside className="fixed right-0 top-0 z-20 h-screen w-full max-w-[460px] border-l border-border bg-panel shadow-2xl">
+    <aside className="fixed right-0 top-0 z-20 h-screen w-full max-w-[460px] border-l border-border bg-card shadow-2xl">
       <div className="flex items-start justify-between border-b border-border p-5">
         <div>
           <p className="font-mono text-xs text-muted-foreground">{project.iso} · {project.queueId}</p>

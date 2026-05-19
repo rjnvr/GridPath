@@ -27,18 +27,23 @@ import {
   ChevronsRight,
   Database,
   Filter,
+  Layers,
   ListChecks,
   Maximize2,
   Minimize2,
+  Radio,
   Search,
+  Zap,
   X
 } from "lucide-react"
 import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from "maplibre-gl"
+import { motion } from "motion/react"
 import { useSearchParams } from "next/navigation"
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { toast } from "sonner"
 
 import { createWatchlistClientAction } from "@/app/(app)/watchlists/actions"
+import { fuelIconFor, fuelTokenClassFor } from "@/components/icons/fuel"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -51,13 +56,26 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { NumberTicker } from "@/components/ui/number-ticker"
 
+/* Hex values mirror the CSS HSL tokens in globals.css (`--fuel-*`).
+   Kept here because MapLibre paint expressions need static color strings. */
 const fuelColors: Record<string, string> = {
-  solar: "#facc15",
-  wind: "#60a5fa",
-  storage: "#c084fc",
-  gas: "#fb7185"
+  solar: "#f5b942",
+  wind: "#5b9bd5",
+  storage: "#a78bfa",
+  gas: "#e07b6d",
+  hydro: "#4cb8c4",
+  other: "#8b8e95"
 }
+
+const FUEL_LEGEND: Array<{ key: keyof typeof fuelColors; label: string }> = [
+  { key: "solar", label: "Solar" },
+  { key: "wind", label: "Wind" },
+  { key: "storage", label: "Storage" },
+  { key: "gas", label: "Gas" },
+  { key: "hydro", label: "Hydro" }
+]
 
 type ProjectFeatureCollection = GeoJSON.FeatureCollection<
   GeoJSON.Point,
@@ -100,11 +118,19 @@ type PanelMode = "projects" | "events"
 const columns: ColumnDef<GridProject>[] = [
   {
     accessorKey: "iso",
-    header: "ISO"
+    header: "ISO",
+    cell: ({ row }) => (
+      <span className="inline-flex items-center rounded-sm border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+        {row.original.iso}
+      </span>
+    )
   },
   {
     accessorKey: "queueId",
-    header: "Queue ID"
+    header: "Queue ID",
+    cell: ({ row }) => (
+      <span className="font-mono text-xs text-muted-foreground">{row.original.queueId}</span>
+    )
   },
   {
     accessorKey: "projectName",
@@ -113,11 +139,26 @@ const columns: ColumnDef<GridProject>[] = [
   {
     accessorKey: "mwRequested",
     header: "MW",
-    cell: ({ row }) => row.original.mwRequested?.toLocaleString() ?? "—"
+    cell: ({ row }) => (
+      <span className="font-mono tabular-nums">
+        {row.original.mwRequested?.toLocaleString() ?? "—"}
+      </span>
+    )
   },
   {
     accessorKey: "fuelType",
-    header: "Fuel"
+    header: "Fuel",
+    cell: ({ row }) => {
+      const fuel = (row.original.fuelType ?? "other").toLowerCase()
+      const Icon = fuelIconFor(fuel)
+      const tone = fuelTokenClassFor(fuel)
+      return (
+        <span className="inline-flex items-center gap-1.5 text-xs">
+          <Icon size={14} className={tone} />
+          <span className="capitalize">{row.original.fuelType ?? "—"}</span>
+        </span>
+      )
+    }
   },
   {
     accessorKey: "currentPhase",
@@ -151,10 +192,10 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
 }
 
 const SEVERITY_STYLES: Record<QueueEventSeverity | string, string> = {
-  critical: "border-red-500/50 bg-red-500/15 text-red-200",
-  important: "border-amber-500/50 bg-amber-500/15 text-amber-100",
-  watch: "border-sky-500/45 bg-sky-500/15 text-sky-100",
-  info: "border-border bg-background text-muted-foreground"
+  critical: "border-status-error/40 bg-status-error/10 text-status-error-foreground",
+  important: "border-status-warning/40 bg-status-warning/10 text-status-warning-foreground",
+  watch: "border-status-info/40 bg-status-info/10 text-status-info-foreground",
+  info: "border-border bg-muted text-muted-foreground"
 }
 
 function eventTypeLabel(value: string): string {
@@ -251,7 +292,17 @@ function substationsToGeoJson(substations: Substation[]): SubstationFeatureColle
 }
 
 function projectPopupHtml(project: ProjectFeatureCollection["features"][number]["properties"]) {
-  return `<strong>${project.projectName}</strong><br/>${project.mwRequested ?? "—"} MW · ${project.currentPhase}<br/>Filed ${project.filedDate ?? "—"}`
+  const mw = project.mwRequested !== null ? project.mwRequested.toLocaleString() : "—"
+  return `
+    <div style="display:flex;flex-direction:column;gap:4px;min-width:180px">
+      <span style="font-family:var(--font-geist-mono),monospace;font-size:10px;letter-spacing:0.04em;text-transform:uppercase;color:hsl(var(--muted-foreground))">${project.fuelType}</span>
+      <strong style="font-size:13px;line-height:1.3">${project.projectName}</strong>
+      <div style="display:flex;align-items:baseline;gap:6px;font-family:var(--font-geist-mono),monospace;font-size:12px;font-variant-numeric:tabular-nums">
+        <span style="color:hsl(var(--foreground));font-weight:500">${mw}</span>
+        <span style="color:hsl(var(--muted-foreground))">MW · ${project.currentPhase}</span>
+      </div>
+      <span style="font-size:11px;color:hsl(var(--muted-foreground))">Filed ${project.filedDate ?? "—"}</span>
+    </div>`
 }
 
 const VALID_MW_BUCKETS = new Set(["lt100", "100to500", "gte500"])
@@ -327,8 +378,8 @@ function eventWithinWindow(event: QueueEvent, timeWindow: string): boolean {
 }
 
 function gridRowsForMapSize(isFullscreen: boolean): string {
-  if (isFullscreen) return "1fr"
-  return "minmax(400px, 45%) 1fr"
+  if (isFullscreen) return "auto 1fr"
+  return "auto minmax(360px, 42%) 1fr"
 }
 
 function hasActiveFilters(filters: FilterState, searchQuery: string): boolean {
@@ -439,6 +490,21 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     },
     [filters, initialData.projects, searchQuery]
   )
+  const kpis = useMemo(() => {
+    const totalMw = filteredProjects.reduce((sum, project) => sum + (project.mwRequested ?? 0), 0)
+    const isos = new Set(filteredProjects.map((project) => project.iso).filter(Boolean))
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+    const eventsLast7d = initialData.recentEvents.filter(
+      (event) => new Date(event.eventAt).getTime() >= sevenDaysAgo
+    ).length
+    return {
+      visibleProjects: filteredProjects.length,
+      totalGw: totalMw / 1000,
+      isos: isos.size,
+      eventsLast7d
+    }
+  }, [filteredProjects, initialData.recentEvents])
+
   const filteredEvents = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLowerCase()
     return initialData.recentEvents.filter((event) => {
@@ -500,11 +566,11 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         type: "circle",
         source: "substations",
         paint: {
-          "circle-radius": 3,
-          "circle-color": "#ffffff",
-          "circle-opacity": 0.75,
-          "circle-stroke-width": 1,
-          "circle-stroke-color": "#0f172a"
+          "circle-radius": 2.5,
+          "circle-color": "#92959c",
+          "circle-opacity": 0.5,
+          "circle-stroke-width": 0.5,
+          "circle-stroke-color": "#0e0f10"
         }
       })
 
@@ -539,11 +605,13 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             fuelColors.storage,
             "gas",
             fuelColors.gas,
-            "#2dd4bf"
+            "hydro",
+            fuelColors.hydro,
+            fuelColors.other
           ],
-          "circle-opacity": 0.88,
-          "circle-stroke-width": 1.5,
-          "circle-stroke-color": "#020617"
+          "circle-opacity": 0.92,
+          "circle-stroke-width": 1.25,
+          "circle-stroke-color": "#0e0f10"
         }
       })
 
@@ -636,39 +704,38 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         className="grid h-[calc(100vh-3.5rem)]"
         style={{ gridTemplateRows: gridRowsForMapSize(isFullscreen) }}
       >
+        <KpiStrip
+          visibleProjects={kpis.visibleProjects}
+          totalGw={kpis.totalGw}
+          isos={kpis.isos}
+          eventsLast7d={kpis.eventsLast7d}
+          freshnessLabel={freshnessText(initialData.latestSnapshotAt)}
+        />
         <div className="relative border-b border-border">
           <div ref={mapContainerRef} className="absolute inset-0" />
-          <div className="absolute left-4 top-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <span className="inline-flex items-center gap-2 rounded-md border border-border bg-card/95 px-3 py-2 shadow-xl backdrop-blur">
-              <Database size={16} />
-              {freshnessText(initialData.latestSnapshotAt)}
-            </span>
-            <span className="inline-flex items-center gap-2 rounded-md border border-border bg-card/95 px-3 py-2 shadow-xl backdrop-blur">
-              <Activity size={16} />
-              {filteredProjects.length.toLocaleString()} visible projects
-            </span>
-          </div>
-          <div className="absolute left-4 top-[80px] flex flex-col items-start gap-2 text-sm text-muted-foreground">
-            <div className="flex flex-col items-start gap-1">
-              <div className="flex items-center gap-2 text-xs">
-                <div className="w-3 h-3 bg-[#facc15] rounded"></div>
-                <span>Solar</span>
-              </div>
-              <div className="flex items-center gap-2 text-xs">
-                <div className="w-3 h-3 bg-[#60a5fa] rounded"></div>
-                <span>Wind</span>
-              </div>
-              <div className="flex items-center gap-2 text-xs">
-                <div className="w-3 h-3 bg-[#c084fc] rounded"></div>
-                <span>Storage</span>
-              </div>
-              <div className="flex items-center gap-2 text-xs">
-                <div className="w-3 h-3 bg-[#fb7185] rounded"></div>
-                <span>Gas</span>
-              </div>
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: "easeOut", delay: 0.15 }}
+            className="pointer-events-none absolute left-4 top-4 flex flex-col gap-2"
+          >
+            <div className="pointer-events-auto inline-flex items-center gap-2 rounded-md border border-border bg-card/90 px-3 py-1.5 text-xs text-muted-foreground shadow-md backdrop-blur">
+              <span className="relative inline-flex h-1.5 w-1.5">
+                <span className="absolute inset-0 animate-pulse-soft rounded-full bg-primary" />
+                <span className="absolute inset-0 rounded-full bg-primary/70" />
+              </span>
+              <span className="font-mono tabular-nums">
+                <NumberTicker value={kpis.visibleProjects} className="text-foreground" /> projects visible
+              </span>
             </div>
-          </div>
-          <div className="absolute right-4 top-4 flex items-center gap-1 rounded-md border border-border bg-card/95 p-1 shadow-xl backdrop-blur">
+            <FuelLegend />
+          </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: "easeOut", delay: 0.15 }}
+            className="absolute right-4 top-4 flex items-center gap-1 rounded-md border border-border bg-card/90 p-1 shadow-md backdrop-blur"
+          >
             <Button
               type="button"
               variant={isFullscreen ? "secondary" : "ghost"}
@@ -683,15 +750,20 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                 <Maximize2 className="h-4 w-4" />
               )}
             </Button>
-          </div>
+          </motion.div>
           {initialData.projects.length === 0 ? (
-            <div className="absolute left-6 top-6 rounded border border-border bg-panel px-4 py-3 text-sm text-muted-foreground">
-              Set `DATABASE_URL`, run migrations, and ingest ERCOT data to populate the map.
+            <div className="absolute left-6 bottom-6 rounded-md border border-border bg-card/90 px-4 py-3 text-sm text-muted-foreground shadow-md backdrop-blur">
+              Set <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">DATABASE_URL</code>, run migrations, and ingest ERCOT data to populate the map.
             </div>
           ) : null}
         </div>
 
-        <div className="flex min-h-0 flex-col overflow-hidden bg-panel">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: "easeOut", delay: 0.2 }}
+          className="flex min-h-0 flex-col overflow-hidden bg-card"
+        >
           <div className="shrink-0 border-b border-border px-4 py-3">
             <div className="flex flex-wrap items-center gap-3">
               <div className="inline-flex rounded-md border border-border bg-background p-1">
@@ -879,7 +951,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             <>
               <div className="min-h-0 flex-1 overflow-auto">
             <table className="w-full border-collapse text-left text-sm">
-              <thead className="sticky top-0 bg-panel text-xs uppercase text-muted-foreground">
+              <thead className="sticky top-0 bg-card text-xs uppercase text-muted-foreground">
                 {table.getHeaderGroups().map((headerGroup) => (
                   <tr key={headerGroup.id}>
                     {headerGroup.headers.map((header) => (
@@ -912,7 +984,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                     onKeyDown={(event) => handleProjectRowKeyDown(event, row.original)}
                     role="button"
                     tabIndex={0}
-                    className="cursor-pointer border-b border-border/70 hover:bg-white/5"
+                    className="cursor-pointer border-b border-border/70 hover:bg-muted/40"
                   >
                     {row.getVisibleCells().map((cell) => (
                       <td key={cell.id} className="px-4 py-3">
@@ -970,7 +1042,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
               onSelectProject={setSelectedProject}
             />
           )}
-        </div>
+        </motion.div>
       </section>
 
       {selectedProject ? (
@@ -1006,7 +1078,7 @@ function EventTable({
   return (
     <div className="min-h-0 flex-1 overflow-auto">
       <table className="w-full border-collapse text-left text-sm">
-        <thead className="sticky top-0 bg-panel text-xs uppercase text-muted-foreground">
+        <thead className="sticky top-0 bg-card text-xs uppercase text-muted-foreground">
           <tr>
             <th className="border-b border-border px-4 py-3">Time</th>
             <th className="border-b border-border px-4 py-3">Severity</th>
@@ -1030,7 +1102,7 @@ function EventTable({
                 onKeyDown={(keyboardEvent) => handleEventRowKeyDown(keyboardEvent, event)}
                 role="button"
                 tabIndex={0}
-                className="cursor-pointer border-b border-border/70 hover:bg-white/5"
+                className="cursor-pointer border-b border-border/70 hover:bg-muted/40"
               >
                 <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-muted-foreground">
                   {new Date(event.eventAt).toLocaleString()}
@@ -1085,15 +1157,46 @@ function ProjectDrawer({ project, onClose }: { project: GridProject; onClose: ()
     ["Withdrawn", project.withdrawnDate],
     ["Owner", project.ownerCompany]
   ]
+  const FuelIcon = fuelIconFor(project.fuelType)
+  const fuelTone = fuelTokenClassFor(project.fuelType)
 
   return (
-    <aside className="fixed right-0 top-0 z-20 h-screen w-[460px] border-l border-border bg-panel shadow-2xl">
-      <div className="flex items-start justify-between border-b border-border p-5">
-        <div>
-          <p className="font-mono text-xs text-muted-foreground">{project.queueId}</p>
-          <h2 className="mt-1 text-xl font-semibold">{project.projectName ?? "Unnamed project"}</h2>
+    <motion.aside
+      initial={{ x: 32, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={{ x: 32, opacity: 0 }}
+      transition={{ duration: 0.22, ease: "easeOut" }}
+      className="fixed right-0 top-0 z-20 h-screen w-[460px] border-l border-border bg-card shadow-2xl"
+    >
+      <div className="flex items-start justify-between gap-3 border-b border-border p-5">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center rounded-sm border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+              {project.iso}
+            </span>
+            <span className="font-mono text-xs text-muted-foreground">{project.queueId}</span>
+          </div>
+          <h2 className="mt-2 text-xl font-semibold tracking-tight">
+            {project.projectName ?? "Unnamed project"}
+          </h2>
+          <div className="mt-1.5 flex items-center gap-3 text-sm text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <FuelIcon size={14} className={fuelTone} />
+              <span className="capitalize">{project.fuelType ?? "—"}</span>
+            </span>
+            <span>·</span>
+            <span className="font-mono tabular-nums text-foreground">
+              {project.mwRequested?.toLocaleString() ?? "—"}
+            </span>
+            <span>MW</span>
+          </div>
         </div>
-        <button type="button" onClick={onClose} className="rounded border border-border p-2" aria-label="Close">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-sm border border-border p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          aria-label="Close"
+        >
           <X size={16} />
         </button>
       </div>
@@ -1184,7 +1287,95 @@ function ProjectDrawer({ project, onClose }: { project: GridProject; onClose: ()
           )}
         </section>
       </div>
-    </aside>
+    </motion.aside>
+  )
+}
+
+function KpiStrip({
+  visibleProjects,
+  totalGw,
+  isos,
+  eventsLast7d,
+  freshnessLabel
+}: {
+  visibleProjects: number
+  totalGw: number
+  isos: number
+  eventsLast7d: number
+  freshnessLabel: string
+}) {
+  const items: Array<{
+    label: string
+    value: number
+    decimals?: number
+    suffix?: string
+    icon: typeof Activity
+  }> = [
+    { label: "Projects in view", value: visibleProjects, icon: Layers },
+    { label: "Capacity requested", value: totalGw, decimals: 1, suffix: "GW", icon: Zap },
+    { label: "ISOs covered", value: isos, icon: Radio },
+    { label: "Events · last 7d", value: eventsLast7d, icon: Activity }
+  ]
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: "easeOut" }}
+      className="grid shrink-0 grid-cols-2 gap-px border-b border-border bg-border lg:grid-cols-4"
+    >
+      {items.map((item, index) => {
+        const Icon = item.icon
+        return (
+          <motion.div
+            key={item.label}
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.05 * index, ease: "easeOut" }}
+            className="flex items-center justify-between gap-3 bg-card px-5 py-3.5"
+          >
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                {item.label}
+              </p>
+              <p className="mt-1 flex items-baseline gap-1.5 text-2xl font-semibold tracking-tight">
+                <NumberTicker
+                  value={item.value}
+                  decimalPlaces={item.decimals ?? 0}
+                  className="text-foreground"
+                />
+                {item.suffix ? (
+                  <span className="text-sm font-medium text-muted-foreground">{item.suffix}</span>
+                ) : null}
+              </p>
+            </div>
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-border bg-muted text-muted-foreground">
+              <Icon className="h-4 w-4" />
+            </span>
+          </motion.div>
+        )
+      })}
+      <div className="col-span-2 flex items-center justify-end gap-2 bg-card px-5 py-2 text-[11px] uppercase tracking-wider text-muted-foreground lg:col-span-4 lg:py-1.5">
+        <Database className="h-3 w-3" />
+        <span>{freshnessLabel}</span>
+      </div>
+    </motion.div>
+  )
+}
+
+function FuelLegend() {
+  return (
+    <div className="pointer-events-auto inline-flex flex-col gap-1 rounded-md border border-border bg-card/90 p-2 shadow-md backdrop-blur">
+      {FUEL_LEGEND.map(({ key, label }) => {
+        const Icon = fuelIconFor(key)
+        return (
+          <div key={key} className="flex items-center gap-2 px-1 text-[11px] text-muted-foreground">
+            <Icon size={12} className={fuelTokenClassFor(key)} />
+            <span>{label}</span>
+          </div>
+        )
+      })}
+    </div>
   )
 }
 

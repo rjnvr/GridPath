@@ -80,10 +80,10 @@ export default async function WatchlistsPage() {
       </header>
 
       {notProvisioned ? (
-        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
-          <p className="font-medium text-amber-200">Watchlists are not yet provisioned in this database.</p>
-          <p className="mt-1 text-amber-100/80">
-            Apply <code className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-xs">db/migrations/003_watchlists.sql</code>
+        <div className="rounded-md border border-status-warning/30 bg-status-warning/[0.06] p-4 text-sm">
+          <p className="font-medium text-status-warning-foreground">Watchlists are not yet provisioned in this database.</p>
+          <p className="mt-1 text-status-warning-foreground/80">
+            Apply <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">db/migrations/003_watchlists.sql</code>
             {" "}to your Neon database, then refresh.
           </p>
         </div>

@@ -14,10 +14,9 @@ const config: Config = {
     },
     extend: {
       colors: {
-        // Legacy named tokens — keep so existing dashboard.tsx keeps working.
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
-        panel: "#10161f",
+        panel: "hsl(var(--card))",
         muted: {
           DEFAULT: "hsl(var(--muted))",
           foreground: "hsl(var(--muted-foreground))"
@@ -27,11 +26,13 @@ const config: Config = {
         ring: "hsl(var(--ring))",
         accent: {
           DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))"
+          foreground: "hsl(var(--accent-foreground))",
+          subtle: "hsl(var(--accent-subtle))"
         },
         primary: {
           DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))"
+          foreground: "hsl(var(--primary-foreground))",
+          hover: "hsl(var(--primary-hover))"
         },
         secondary: {
           DEFAULT: "hsl(var(--secondary))",
@@ -48,12 +49,43 @@ const config: Config = {
         popover: {
           DEFAULT: "hsl(var(--popover))",
           foreground: "hsl(var(--popover-foreground))"
+        },
+        fuel: {
+          solar: "hsl(var(--fuel-solar))",
+          wind: "hsl(var(--fuel-wind))",
+          storage: "hsl(var(--fuel-storage))",
+          gas: "hsl(var(--fuel-gas))",
+          hydro: "hsl(var(--fuel-hydro))",
+          other: "hsl(var(--fuel-other))"
+        },
+        status: {
+          success: {
+            DEFAULT: "hsl(var(--status-success))",
+            foreground: "hsl(var(--status-success-fg))"
+          },
+          warning: {
+            DEFAULT: "hsl(var(--status-warning))",
+            foreground: "hsl(var(--status-warning-fg))"
+          },
+          error: {
+            DEFAULT: "hsl(var(--status-error))",
+            foreground: "hsl(var(--status-error-fg))"
+          },
+          info: {
+            DEFAULT: "hsl(var(--status-info))",
+            foreground: "hsl(var(--status-info-fg))"
+          }
         }
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)"
+        sm: "var(--radius-sm)",
+        md: "var(--radius-md)",
+        lg: "var(--radius-lg)",
+        DEFAULT: "var(--radius)"
+      },
+      fontFamily: {
+        sans: ["var(--font-geist-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ["var(--font-geist-mono)", "ui-monospace", "SFMono-Regular", "monospace"]
       },
       keyframes: {
         "accordion-down": {
@@ -63,11 +95,16 @@ const config: Config = {
         "accordion-up": {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" }
+        },
+        "pulse-soft": {
+          "0%, 100%": { opacity: "0.6" },
+          "50%": { opacity: "1" }
         }
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
-        "accordion-up": "accordion-up 0.2s ease-out"
+        "accordion-up": "accordion-up 0.2s ease-out",
+        "pulse-soft": "pulse-soft 2.4s ease-in-out infinite"
       }
     }
   },

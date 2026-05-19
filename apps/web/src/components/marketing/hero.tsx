@@ -23,28 +23,18 @@ function relativeFromNow(value: string | null) {
 export function Hero({ latestSnapshotAt }: HeroProps) {
   const freshness = relativeFromNow(latestSnapshotAt)
   return (
-    <section className="relative overflow-hidden border-b border-border bg-[linear-gradient(180deg,hsl(var(--background)),hsl(214_32%_7%))]">
+    <section className="relative overflow-hidden border-b border-border bg-background">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-[0.16]"
-        style={{
-          backgroundImage:
-            "linear-gradient(hsl(var(--muted-foreground)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--muted-foreground)) 1px, transparent 1px)",
-          backgroundSize: "72px 72px",
-          maskImage: "linear-gradient(to bottom, black 20%, transparent 88%)"
-        }}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-56 opacity-70"
+        className="pointer-events-none absolute inset-x-0 top-0 h-80"
         style={{
           background:
-            "linear-gradient(115deg, transparent 0%, hsl(173 80% 50% / 0.10) 34%, transparent 35%, transparent 52%, hsl(38 92% 60% / 0.08) 53%, transparent 70%)"
+            "radial-gradient(60% 80% at 50% 0%, hsl(var(--primary) / 0.08), transparent 70%)"
         }}
       />
       <div
         aria-hidden
-        className="pointer-events-none absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/60 to-transparent"
+        className="pointer-events-none absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent"
       />
       <div className="relative mx-auto max-w-6xl px-6 py-20 md:py-24">
         <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
@@ -79,7 +69,7 @@ export function Hero({ latestSnapshotAt }: HeroProps) {
               </Button>
             </div>
           </div>
-          <div className="relative aspect-[6/5] w-full max-w-[640px] justify-self-center rounded-xl bg-primary/5 p-1 shadow-[0_24px_80px_rgba(45,212,191,0.10)] lg:justify-self-end">
+          <div className="relative aspect-[6/5] w-full max-w-[640px] justify-self-center rounded-lg border border-border bg-card p-1 shadow-[0_24px_80px_hsl(var(--primary)/0.08)] lg:justify-self-end">
             <GridTopology />
           </div>
         </div>

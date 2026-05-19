@@ -8,27 +8,54 @@
   :root {
     color-scheme: dark;
 
-    /* Tuned to the existing GridPath dark palette. */
-    --background: 213 33% 5%;            /* #080b0f */
-    --foreground: 213 27% 95%;           /* #eef2f7 */
-    --card: 214 32% 9%;                  /* #10161f */
-    --card-foreground: 213 27% 95%;
-    --popover: 214 32% 9%;
-    --popover-foreground: 213 27% 95%;
-    --primary: 173 80% 50%;              /* #2dd4bf accent */
-    --primary-foreground: 213 33% 5%;
-    --secondary: 214 28% 13%;
-    --secondary-foreground: 213 27% 95%;
-    --muted: 214 28% 13%;
-    --muted-foreground: 213 19% 63%;     /* #8ea0b5 */
-    --accent: 214 28% 13%;
-    --accent-foreground: 213 27% 95%;
+    /* Surfaces — true neutral grey, zero saturation. */
+    --background: 0 0% 6%;               /* #0f0f0f */
+    --foreground: 0 0% 96%;              /* #f5f5f5 */
+    --card: 0 0% 9%;                     /* #171717 */
+    --card-foreground: 0 0% 96%;
+    --popover: 0 0% 11%;                 /* #1c1c1c — slightly elevated */
+    --popover-foreground: 0 0% 96%;
+    --muted: 0 0% 13%;                   /* #212121 */
+    --muted-foreground: 0 0% 60%;        /* #999999 */
+    --secondary: 0 0% 13%;
+    --secondary-foreground: 0 0% 96%;
+    --accent: 0 0% 15%;                  /* #262626 */
+    --accent-foreground: 0 0% 96%;
+    --border: 0 0% 18%;                  /* #2e2e2e */
+    --input: 0 0% 18%;
     --destructive: 0 70% 55%;
-    --destructive-foreground: 213 27% 95%;
-    --border: 212 25% 19%;               /* #243140 */
-    --input: 212 25% 19%;
-    --ring: 173 80% 50%;
-    --radius: 0.5rem;
+    --destructive-foreground: 0 0% 96%;
+
+    /* Brand accent — single restrained green. */
+    --primary: 152 55% 50%;              /* #3ab87a */
+    --primary-hover: 152 55% 56%;        /* #52c388 */
+    --primary-foreground: 0 0% 8%;       /* #141414 */
+    --ring: 152 55% 45%;                 /* focus ring */
+    --accent-subtle: 152 40% 18%;        /* used with /0.4 alpha */
+
+    /* Domain — fuel-type tokens. */
+    --fuel-solar: 41 89% 61%;            /* #f5b942 */
+    --fuel-wind: 212 56% 60%;            /* #5b9bd5 — only blue in the app */
+    --fuel-storage: 256 90% 76%;         /* #a78bfa */
+    --fuel-gas: 8 68% 65%;               /* #e07b6d */
+    --fuel-hydro: 187 51% 53%;           /* #4cb8c4 */
+    --fuel-other: 220 4% 56%;            /* #8b8e95 */
+
+    /* Status. */
+    --status-success: 142 71% 45%;       /* #22c55e */
+    --status-success-fg: 142 77% 73%;    /* #86efac */
+    --status-warning: 38 92% 50%;        /* #f59e0b */
+    --status-warning-fg: 45 96% 65%;     /* #fcd34d */
+    --status-error: 0 84% 60%;           /* #ef4444 */
+    --status-error-fg: 0 94% 82%;        /* #fca5a5 */
+    --status-info: 215 16% 47%;          /* #64748b */
+    --status-info-fg: 213 27% 84%;       /* #cbd5e1 */
+
+    /* Radius — per-surface. */
+    --radius-sm: 0.25rem;                /* 4px — buttons, inputs, badges */
+    --radius-md: 0.375rem;               /* 6px — cards, popovers */
+    --radius-lg: 0.625rem;               /* 10px — modals */
+    --radius: var(--radius-md);          /* default */
   }
 }
 
@@ -36,26 +63,63 @@
   * {
     @apply border-border;
   }
+  html {
+    font-feature-settings: "cv11", "ss01";
+  }
   body {
     @apply bg-background text-foreground antialiased;
     margin: 0;
     min-height: 100vh;
+    /* App-wide subtle grid. Applied once, on body, so no component can re-add it. */
+    background-image:
+      linear-gradient(to right, hsl(var(--border) / 0.35) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--border) / 0.35) 1px, transparent 1px);
+    background-size: 56px 56px;
+    background-position: -1px -1px;
   }
   button,
   input,
   select {
     font: inherit;
   }
+  /* All numerics use tabular-nums. */
+  .tabular,
+  table,
+  [data-numeric] {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer utilities {
+  /* Optional decorative grid for elevated sections (e.g. hero) — uses the same
+     cell size as the body grid so nothing visually disagrees. */
+  .bg-grid-overlay {
+    background-image:
+      linear-gradient(to right, hsl(var(--border) / 0.55) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--border) / 0.55) 1px, transparent 1px);
+    background-size: 56px 56px;
+    background-position: -1px -1px;
+  }
 }
 
 .maplibregl-popup-content {
-  background: hsl(var(--card));
+  background: hsl(var(--popover));
   border: 1px solid hsl(var(--border));
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: hsl(var(--foreground));
   padding: 10px 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .maplibregl-popup-tip {
-  border-top-color: hsl(var(--card));
+  border-top-color: hsl(var(--popover));
+}
+
+.maplibregl-ctrl-attrib {
+  background: hsl(var(--card) / 0.7) !important;
+  color: hsl(var(--muted-foreground)) !important;
+}
+
+.maplibregl-ctrl-attrib a {
+  color: hsl(var(--foreground)) !important;
 }

@@ -10,9 +10,9 @@ function formatDateTime(value: string | null) {
 }
 
 function statusClass(status: string) {
-  if (status === "success") return "bg-emerald-500/15 text-emerald-300"
-  if (status === "failed") return "bg-red-500/15 text-red-300"
-  return "bg-amber-500/15 text-amber-200"
+  if (status === "success") return "bg-status-success/10 text-status-success-foreground border border-status-success/30"
+  if (status === "failed") return "bg-status-error/10 text-status-error-foreground border border-status-error/30"
+  return "bg-status-warning/10 text-status-warning-foreground border border-status-warning/30"
 }
 
 export default async function HealthPage() {
@@ -36,10 +36,13 @@ export default async function HealthPage() {
                 </p>
               </div>
               <span
-                className={`rounded px-2 py-1 text-xs ${
-                  iso.snapshotFresh ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"
+                className={`inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 text-xs ${
+                  iso.snapshotFresh
+                    ? "border-status-success/30 bg-status-success/10 text-status-success-foreground"
+                    : "border-status-error/30 bg-status-error/10 text-status-error-foreground"
                 }`}
               >
+                <span className={`h-1.5 w-1.5 rounded-full ${iso.snapshotFresh ? "bg-status-success" : "bg-status-error"}`} />
                 {iso.snapshotFresh ? "Fresh" : "Stale"}
               </span>
             </div>
@@ -128,31 +131,31 @@ export default async function HealthPage() {
       </section>
 
       {health.failedSourceReports.length > 0 ? (
-        <section className="rounded-md border border-red-500/30 bg-red-500/10">
-          <div className="border-b border-red-500/20 px-4 py-3">
-            <h2 className="font-medium text-red-100">Recent Source Report Failures</h2>
+        <section className="rounded-md border border-status-error/30 bg-status-error/[0.06]">
+          <div className="border-b border-status-error/20 px-4 py-3">
+            <h2 className="font-medium text-status-error-foreground">Recent Source Report Failures</h2>
           </div>
           <div className="overflow-auto">
             <table className="w-full border-collapse text-left text-sm">
-              <thead className="text-xs uppercase text-red-100/70">
+              <thead className="text-xs uppercase text-status-error-foreground/70">
                 <tr>
-                  <th className="border-b border-red-500/20 px-4 py-3">Time</th>
-                  <th className="border-b border-red-500/20 px-4 py-3">ISO</th>
-                  <th className="border-b border-red-500/20 px-4 py-3">Report</th>
-                  <th className="border-b border-red-500/20 px-4 py-3">Error</th>
+                  <th className="border-b border-status-error/20 px-4 py-3">Time</th>
+                  <th className="border-b border-status-error/20 px-4 py-3">ISO</th>
+                  <th className="border-b border-status-error/20 px-4 py-3">Report</th>
+                  <th className="border-b border-status-error/20 px-4 py-3">Error</th>
                 </tr>
               </thead>
               <tbody>
                 {health.failedSourceReports.map((report) => (
-                  <tr key={report.id} className="border-b border-red-500/20">
-                    <td className="px-4 py-3 font-mono text-xs text-red-100/70">
+                  <tr key={report.id} className="border-b border-status-error/20">
+                    <td className="px-4 py-3 font-mono text-xs text-status-error-foreground/70">
                       {formatDateTime(report.completedAt)}
                     </td>
                     <td className="px-4 py-3">{report.iso}</td>
                     <td className="max-w-[260px] truncate px-4 py-3">
                       {report.sourceName ?? report.sourceUrl}
                     </td>
-                    <td className="px-4 py-3 text-red-100/80">{report.errorMessage ?? "—"}</td>
+                    <td className="px-4 py-3 text-status-error-foreground/80">{report.errorMessage ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>

@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import { SessionProvider } from "next-auth/react"
 
+import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
 
 import "./globals.css"
@@ -23,10 +24,12 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
+    <html lang="en" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable}`}>
       <body className="font-sans antialiased">
-        <SessionProvider>{children}</SessionProvider>
-        <Toaster />
+        <ThemeProvider>
+          <SessionProvider>{children}</SessionProvider>
+          <Toaster />
+        </ThemeProvider>
       </body>
     </html>
   )
