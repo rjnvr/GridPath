@@ -1,6 +1,8 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useId, useMemo, useRef, useState } from "react"
+
+import { AnimatedBeam } from "@/components/magicui/animated-beam"
 
 const PHASES = [
   { id: "filed", label: "Filed", detail: "Application submitted" },
@@ -38,6 +40,9 @@ function fuelColor(fuel: string) {
 export function InterconnectFlow() {
   const [phaseIndex, setPhaseIndex] = useState(2)
   const [feedOffset, setFeedOffset] = useState(0)
+  const flowContainerRef = useRef<HTMLDivElement>(null)
+  const isoDataCenterRef = useRef<HTMLDivElement>(null)
+  const feedPanelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -131,9 +136,26 @@ export function InterconnectFlow() {
             </ol>
           </div>
 
-          <div className="space-y-4 rounded-md p-1 shadow-[0_24px_90px_hsl(var(--primary)/0.06)]">
-            <IsoDataCenter />
-            <FeedPanel feed={feed} />
+          <div
+            ref={flowContainerRef}
+            className="relative space-y-4 rounded-md p-1 shadow-[0_24px_90px_hsl(var(--primary)/0.06)]"
+          >
+            <AnimatedBeam
+              containerRef={flowContainerRef}
+              fromRef={feedPanelRef}
+              toRef={isoDataCenterRef}
+              className="z-10"
+              curvature={-42}
+              duration={2.7}
+              gradientStartColor="hsl(var(--primary) / 0.2)"
+              gradientStopColor="hsl(var(--fuel-wind))"
+            />
+            <div ref={isoDataCenterRef} className="relative z-20">
+              <IsoDataCenter />
+            </div>
+            <div ref={feedPanelRef} className="relative z-20">
+              <FeedPanel feed={feed} />
+            </div>
           </div>
         </div>
       </div>
@@ -141,93 +163,15 @@ export function InterconnectFlow() {
   )
 }
 
-/** Isometric data-center campus with animated power/data transfer. */
+/** Isometric data-center campus. */
 function IsoDataCenter() {
   return (
     <div className="relative isolate min-h-[420px] overflow-hidden rounded-md border border-border bg-card/60 shadow-[inset_0_0_80px_hsl(var(--primary)/0.04)]">
       <div
         className="relative h-[420px]"
         role="img"
-        aria-label="Two 3D data-center campus models connected by animated transmission paths"
+        aria-label="Two 3D data-center campus models with queue input metrics"
       >
-        <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 600 420" aria-hidden>
-          <defs>
-            <linearGradient id="powerLine" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="hsl(var(--primary) / 0)" />
-              <stop offset="50%" stopColor="hsl(var(--primary) / 0.9)" />
-              <stop offset="100%" stopColor="hsl(var(--primary) / 0)" />
-            </linearGradient>
-            <linearGradient id="dcRoof" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="hsl(0 0% 22%)" />
-              <stop offset="100%" stopColor="hsl(0 0% 12%)" />
-            </linearGradient>
-            <linearGradient id="dcFront" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="hsl(0 0% 16%)" />
-              <stop offset="100%" stopColor="hsl(0 0% 7%)" />
-            </linearGradient>
-            <linearGradient id="dcSide" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="hsl(0 0% 11%)" />
-              <stop offset="100%" stopColor="hsl(0 0% 5%)" />
-            </linearGradient>
-          </defs>
-          <path
-            d="M 44 258 C 112 244, 130 284, 184 286"
-            fill="none"
-            stroke="url(#powerLine)"
-            strokeWidth={2}
-            strokeDasharray="7 15"
-            style={{ animation: "gp-power-flow 2.4s linear infinite" }}
-          />
-          <path
-            d="M 232 254 C 298 218, 356 218, 424 254"
-            fill="none"
-            stroke="hsl(var(--border))"
-            strokeWidth={7}
-            strokeLinecap="round"
-            opacity={0.72}
-          />
-          <path
-            d="M 232 268 C 298 232, 356 232, 424 268"
-            fill="none"
-            stroke="hsl(var(--border))"
-            strokeWidth={7}
-            strokeLinecap="round"
-            opacity={0.72}
-          />
-          <path
-            id="packetLaneTop"
-            d="M 232 254 C 298 218, 356 218, 424 254"
-            fill="none"
-            stroke="url(#powerLine)"
-            strokeWidth={2}
-            strokeLinecap="round"
-          />
-          <path
-            id="packetLaneBottom"
-            d="M 232 268 C 298 232, 356 232, 424 268"
-            fill="none"
-            stroke="url(#powerLine)"
-            strokeWidth={2}
-            strokeLinecap="round"
-          />
-          {[0, 0.9, 1.8].map((delay) => (
-            <circle key={delay} r="4" fill="hsl(var(--primary))">
-              <animateMotion dur="3s" begin={`${delay}s`} repeatCount="indefinite">
-                <mpath href="#packetLaneTop" />
-              </animateMotion>
-              <animate attributeName="opacity" values="0;1;1;0" dur="3s" begin={`${delay}s`} repeatCount="indefinite" />
-            </circle>
-          ))}
-          {[0.45, 1.35, 2.25].map((delay) => (
-            <circle key={delay} r="3" fill="hsl(var(--fuel-wind))">
-              <animateMotion dur="3.2s" begin={`${delay}s`} repeatCount="indefinite">
-                <mpath href="#packetLaneBottom" />
-              </animateMotion>
-              <animate attributeName="opacity" values="0;1;1;0" dur="3.2s" begin={`${delay}s`} repeatCount="indefinite" />
-            </circle>
-          ))}
-        </svg>
-
         <div className="absolute left-5 top-8 w-[150px] rounded-lg border border-border bg-background/85 p-3 backdrop-blur">
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
             Queue inputs
@@ -264,24 +208,6 @@ function IsoDataCenter() {
           active
         />
       </div>
-
-      <style jsx global>{`
-        @keyframes gp-power-flow {
-          to {
-            stroke-dashoffset: -200;
-          }
-        }
-
-        @keyframes gp-window-pulse {
-          0%,
-          100% {
-            opacity: 0.35;
-          }
-          50% {
-            opacity: 1;
-          }
-        }
-      `}</style>
     </div>
   )
 }
@@ -299,6 +225,10 @@ function DataCenterModel({
   accent: string
   active?: boolean
 }) {
+  const gradientId = useId()
+  const roofGradientId = `${gradientId}-dc-roof`
+  const frontGradientId = `${gradientId}-dc-front`
+  const sideGradientId = `${gradientId}-dc-side`
   const frontWindows = [
     [33, 66, 47, 72],
     [53, 75, 67, 81],
@@ -323,22 +253,36 @@ function DataCenterModel({
         className="h-[125px] w-[154px] drop-shadow-2xl"
         aria-hidden
       >
+        <defs>
+          <linearGradient id={roofGradientId} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="hsl(0 0% 22%)" />
+            <stop offset="100%" stopColor="hsl(0 0% 12%)" />
+          </linearGradient>
+          <linearGradient id={frontGradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="hsl(0 0% 16%)" />
+            <stop offset="100%" stopColor="hsl(0 0% 7%)" />
+          </linearGradient>
+          <linearGradient id={sideGradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="hsl(0 0% 11%)" />
+            <stop offset="100%" stopColor="hsl(0 0% 5%)" />
+          </linearGradient>
+        </defs>
         <ellipse cx="96" cy="130" rx="78" ry="15" fill="hsl(var(--primary) / 0.1)" />
         <polygon
           points="18,46 94,14 172,48 96,82"
-          fill="url(#dcRoof)"
+          fill={`url(#${roofGradientId})`}
           stroke="hsl(var(--border))"
           strokeWidth="1"
         />
         <polygon
           points="18,46 96,82 96,132 18,96"
-          fill="url(#dcFront)"
+          fill={`url(#${frontGradientId})`}
           stroke="hsl(var(--border))"
           strokeWidth="1"
         />
         <polygon
           points="96,82 172,48 172,98 96,132"
-          fill="url(#dcSide)"
+          fill={`url(#${sideGradientId})`}
           stroke="hsl(var(--border))"
           strokeWidth="1"
         />

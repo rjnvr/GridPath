@@ -5,6 +5,11 @@ import { useEffect, useId, useState, type RefObject } from "react"
 
 import { cn } from "@/lib/utils"
 
+type Point = {
+  x: number
+  y: number
+}
+
 interface AnimatedBeamProps {
   containerRef: RefObject<HTMLElement | null>
   fromRef: RefObject<HTMLElement | null>
@@ -43,6 +48,7 @@ export function AnimatedBeam({
   const id = useId()
   const [path, setPath] = useState("")
   const [svgDims, setSvgDims] = useState({ width: 0, height: 0 })
+  const [points, setPoints] = useState<{ start: Point; end: Point } | null>(null)
 
   useEffect(() => {
     function measure() {
@@ -64,6 +70,7 @@ export function AnimatedBeam({
       const midY = (startY + endY) / 2 + curvature
 
       setSvgDims({ width: cRect.width, height: cRect.height })
+      setPoints({ start: { x: startX, y: startY }, end: { x: endX, y: endY } })
       setPath(`M ${startX},${startY} Q ${midX},${midY} ${endX},${endY}`)
     }
 
@@ -77,6 +84,8 @@ export function AnimatedBeam({
     }
   }, [containerRef, fromRef, toRef, curvature])
 
+  const gradientAnimation = getGradientAnimation(points, reverse)
+
   return (
     <svg
       aria-hidden
@@ -89,12 +98,8 @@ export function AnimatedBeam({
         <motion.linearGradient
           id={id}
           gradientUnits="userSpaceOnUse"
-          initial={{ x1: "0%", x2: "0%", y1: "0%", y2: "0%" }}
-          animate={
-            reverse
-              ? { x1: ["110%", "-10%"], x2: ["100%", "-20%"], y1: ["0%", "0%"], y2: ["0%", "0%"] }
-              : { x1: ["-10%", "110%"], x2: ["-20%", "100%"], y1: ["0%", "0%"], y2: ["0%", "0%"] }
-          }
+          initial={gradientAnimation.initial}
+          animate={gradientAnimation.animate}
           transition={{ duration, delay, ease: "linear", repeat: Infinity }}
         >
           <stop stopColor={gradientStartColor} stopOpacity="0" />
@@ -110,4 +115,47 @@ export function AnimatedBeam({
       <path d={path} strokeWidth={2} stroke={`url(#${id})`} fill="none" strokeLinecap="round" />
     </svg>
   )
+}
+
+function getGradientAnimation(points: { start: Point; end: Point } | null, reverse: boolean) {
+  if (!points) {
+    return {
+      initial: { x1: "0%", x2: "0%", y1: "0%", y2: "0%" },
+      animate: { x1: "0%", x2: "0%", y1: "0%", y2: "0%" }
+    }
+  }
+
+  const dx = points.end.x - points.start.x
+  const dy = points.end.y - points.start.y
+  const length = Math.hypot(dx, dy) || 1
+  const unit = { x: dx / length, y: dy / length }
+  const beamLength = Math.max(length * 0.35, 80)
+
+  const from = reverse ? points.end : points.start
+  const to = reverse ? points.start : points.end
+  const direction = reverse ? { x: -unit.x, y: -unit.y } : unit
+
+  const initialTail = {
+    x: from.x - direction.x * beamLength,
+    y: from.y - direction.y * beamLength
+  }
+  const finalTail = {
+    x: to.x - direction.x * beamLength,
+    y: to.y - direction.y * beamLength
+  }
+
+  return {
+    initial: {
+      x1: initialTail.x,
+      y1: initialTail.y,
+      x2: from.x,
+      y2: from.y
+    },
+    animate: {
+      x1: finalTail.x,
+      y1: finalTail.y,
+      x2: to.x,
+      y2: to.y
+    }
+  }
 }
