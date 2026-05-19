@@ -28,6 +28,7 @@ import {
   Database,
   ExternalLink,
   Filter,
+  GripHorizontal,
   ListChecks,
   Maximize2,
   Minimize2,
@@ -37,7 +38,7 @@ import {
 import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from "maplibre-gl"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { useEffect, useMemo, useRef, useState, useTransition } from "react"
+import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { toast } from "sonner"
 
 import { createWatchlistClientAction } from "@/app/(app)/watchlists/actions"
@@ -337,9 +338,9 @@ function eventWithinWindow(event: QueueEvent, timeWindow: string): boolean {
   return elapsed <= 30 * 24 * 60 * 60 * 1000
 }
 
-function gridRowsForMapSize(isFullscreen: boolean): string {
+function gridRowsForMapSize(isFullscreen: boolean, mapHeightPercent: number): string {
   if (isFullscreen) return "1fr"
-  return "minmax(400px, 45%) 1fr"
+  return `minmax(420px, ${mapHeightPercent}%) 10px minmax(180px, 1fr)`
 }
 
 function hasActiveFilters(filters: FilterState, searchQuery: string): boolean {
@@ -377,9 +378,11 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
   })
   const [searchQuery, setSearchQuery] = useState("")
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [mapHeightPercent, setMapHeightPercent] = useState(68)
   const [sorting, setSorting] = useState<SortingState>([])
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 50 })
   const [selectedProject, setSelectedProject] = useState<GridProject | null>(null)
+  const splitContainerRef = useRef<HTMLElement | null>(null)
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const popupRef = useRef<maplibregl.Popup | null>(null)
@@ -623,7 +626,35 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     }
     const resize = window.setTimeout(() => map.resize(), 220)
     return () => window.clearTimeout(resize)
-  }, [isFullscreen])
+  }, [isFullscreen, mapHeightPercent])
+
+  function handleResizeHandlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (isFullscreen || !splitContainerRef.current) {
+      return
+    }
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const bounds = splitContainerRef.current.getBoundingClientRect()
+
+    function updateMapHeight(clientY: number) {
+      const nextPercent = ((clientY - bounds.top) / bounds.height) * 100
+      setMapHeightPercent(Math.min(82, Math.max(46, Math.round(nextPercent))))
+    }
+
+    updateMapHeight(event.clientY)
+
+    function handlePointerMove(pointerEvent: PointerEvent) {
+      updateMapHeight(pointerEvent.clientY)
+    }
+
+    function handlePointerUp() {
+      window.removeEventListener("pointermove", handlePointerMove)
+      window.removeEventListener("pointerup", handlePointerUp)
+    }
+
+    window.addEventListener("pointermove", handlePointerMove)
+    window.addEventListener("pointerup", handlePointerUp, { once: true })
+  }
 
   function clearFilters() {
     setSearchQuery("")
@@ -634,8 +665,9 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
   return (
     <main className="min-h-[calc(100vh-3.5rem)] bg-background text-foreground">
       <section
+        ref={splitContainerRef}
         className="grid h-[calc(100vh-3.5rem)]"
-        style={{ gridTemplateRows: gridRowsForMapSize(isFullscreen) }}
+        style={{ gridTemplateRows: gridRowsForMapSize(isFullscreen, mapHeightPercent) }}
       >
         <div className="relative border-b border-border">
           <div ref={mapContainerRef} className="absolute inset-0" />
@@ -691,6 +723,38 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             </div>
           ) : null}
         </div>
+
+        {!isFullscreen ? (
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize map and table"
+            tabIndex={0}
+            onPointerDown={handleResizeHandlePointerDown}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowUp") {
+                event.preventDefault()
+                setMapHeightPercent((current) => Math.max(46, current - 4))
+              }
+              if (event.key === "ArrowDown") {
+                event.preventDefault()
+                setMapHeightPercent((current) => Math.min(82, current + 4))
+              }
+              if (event.key === "Home") {
+                event.preventDefault()
+                setMapHeightPercent(46)
+              }
+              if (event.key === "End") {
+                event.preventDefault()
+                setMapHeightPercent(82)
+              }
+            }}
+            className="group flex cursor-row-resize items-center justify-center border-y border-border bg-background/95 outline-none transition hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring"
+            title="Drag to resize the map"
+          >
+            <GripHorizontal className="h-4 w-4 text-muted-foreground transition group-hover:text-foreground" />
+          </div>
+        ) : null}
 
         <div className="flex min-h-0 flex-col overflow-hidden bg-panel">
           <div className="shrink-0 border-b border-border px-4 py-3">

@@ -20,7 +20,7 @@ export function MobileNav() {
       <DialogContent className="left-0 top-0 h-full max-w-xs translate-x-0 translate-y-0 rounded-none border-r border-border p-0 sm:rounded-none">
         <DialogTitle className="sr-only">Navigation</DialogTitle>
         <div onClick={() => setOpen(false)}>
-          <Sidebar />
+          <Sidebar collapsible={false} />
         </div>
       </DialogContent>
     </Dialog>
