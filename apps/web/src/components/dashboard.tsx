@@ -28,7 +28,6 @@ import {
   Database,
   ExternalLink,
   Filter,
-  GripHorizontal,
   Layers,
   ListChecks,
   Maximize2,
@@ -43,8 +42,6 @@ import { motion } from "motion/react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import {
-  type CSSProperties,
-  type PointerEvent as ReactPointerEvent,
   useEffect,
   useMemo,
   useRef,
@@ -128,8 +125,9 @@ type EventFilterState = {
 }
 
 type PanelMode = "projects" | "events"
-type MapMode = "normal" | "minimized" | "fullscreen"
-type MapSize = { width: number; height: number }
+type MapMode = "normal" | "fullscreen"
+
+const MAP_DEFAULT_HEIGHT = 520
 
 const columns: ColumnDef<GridProject>[] = [
   {
@@ -506,22 +504,6 @@ function hasActiveFilters(filters: FilterState, searchQuery: string): boolean {
   )
 }
 
-function mapPanelStyle(mapMode: MapMode, mapSize: MapSize): CSSProperties {
-  if (mapMode === "fullscreen") {
-    return {
-      bottom: "1.5rem",
-      height: "calc(100vh - 6.5rem)",
-      left: "1.5rem",
-      right: "1.5rem",
-      width: "auto"
-    }
-  }
-  if (mapMode === "minimized") {
-    return { bottom: "1.5rem", height: 76, right: "1.5rem", width: 340 }
-  }
-  return { bottom: "1.5rem", height: mapSize.height, right: "1.5rem", width: mapSize.width }
-}
-
 function hasActiveEventFilters(filters: EventFilterState, searchQuery: string): boolean {
   return (
     searchQuery.length > 0 ||
@@ -546,7 +528,6 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
   })
   const [searchQuery, setSearchQuery] = useState("")
   const [mapMode, setMapMode] = useState<MapMode>("normal")
-  const [mapSize, setMapSize] = useState<MapSize>({ width: 560, height: 430 })
   const [sorting, setSorting] = useState<SortingState>([])
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 50 })
   const [selectedProject, setSelectedProject] = useState<GridProject | null>(null)
@@ -827,35 +808,25 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     }
     const resize = window.setTimeout(() => map.resize(), 220)
     return () => window.clearTimeout(resize)
-  }, [mapMode, mapSize])
+  }, [mapMode])
 
-  function handleMapResizePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    if (mapMode !== "normal") {
+  useEffect(() => {
+    if (mapMode !== "fullscreen") {
       return
     }
-    event.preventDefault()
-    event.currentTarget.setPointerCapture(event.pointerId)
-    const startX = event.clientX
-    const startY = event.clientY
-    const startSize = mapSize
-
-    function handlePointerMove(pointerEvent: PointerEvent) {
-      const maxWidth = Math.max(380, window.innerWidth - 64)
-      const maxHeight = Math.max(300, window.innerHeight - 128)
-      setMapSize({
-        width: Math.min(maxWidth, Math.max(360, Math.round(startSize.width + pointerEvent.clientX - startX))),
-        height: Math.min(maxHeight, Math.max(260, Math.round(startSize.height + pointerEvent.clientY - startY)))
-      })
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    function handleKeydown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setMapMode("normal")
+      }
     }
-
-    function handlePointerUp() {
-      window.removeEventListener("pointermove", handlePointerMove)
-      window.removeEventListener("pointerup", handlePointerUp)
+    window.addEventListener("keydown", handleKeydown)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener("keydown", handleKeydown)
     }
-
-    window.addEventListener("pointermove", handlePointerMove)
-    window.addEventListener("pointerup", handlePointerUp, { once: true })
-  }
+  }, [mapMode])
 
   function handleProjectRowKeyDown(
     event: React.KeyboardEvent<HTMLTableRowElement>,
@@ -882,7 +853,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
 
   return (
     <main className="relative min-h-[calc(100vh-3.5rem)] bg-background text-foreground">
-      <section className="flex h-[calc(100vh-3.5rem)] flex-col">
+      <section className="flex flex-col">
         <KpiStrip
           visibleProjects={kpis.visibleProjects}
           totalGw={kpis.totalGw}
@@ -890,11 +861,68 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
           eventsLast7d={kpis.eventsLast7d}
           freshnessLabel={freshnessText(initialData.latestSnapshotAt)}
         />
+
+        <motion.section
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.32, ease: "easeOut", delay: 0.1 }}
+          className="flex justify-center px-6 py-6"
+          aria-label="Project map"
+        >
+          <div
+            className={
+              mapMode === "fullscreen"
+                ? "fixed inset-6 z-30 overflow-hidden rounded-md border border-border bg-card shadow-2xl"
+                : "relative w-full max-w-5xl overflow-hidden rounded-md border border-border bg-card shadow-md"
+            }
+            style={mapMode === "fullscreen" ? undefined : { height: MAP_DEFAULT_HEIGHT }}
+          >
+            <div className="flex h-11 items-center justify-between gap-3 border-b border-border bg-card/95 px-3 backdrop-blur">
+              <div className="flex min-w-0 items-center gap-2">
+                <Layers className="h-4 w-4 text-muted-foreground" />
+                <span className="truncate font-mono text-xs tabular-nums text-muted-foreground">
+                  <NumberTicker value={kpis.visibleProjects} className="text-foreground" /> projects visible
+                </span>
+              </div>
+              <Button
+                type="button"
+                variant={mapMode === "fullscreen" ? "secondary" : "ghost"}
+                size="sm"
+                onClick={() => setMapMode(mapMode === "fullscreen" ? "normal" : "fullscreen")}
+                aria-label={mapMode === "fullscreen" ? "Exit fullscreen map" : "Fullscreen map"}
+                title={mapMode === "fullscreen" ? "Exit fullscreen map" : "Fullscreen map"}
+              >
+                {mapMode === "fullscreen" ? (
+                  <Minimize2 className="h-4 w-4" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+            <div className="relative h-[calc(100%-2.75rem)]">
+              <div ref={mapContainerRef} className="absolute inset-0" />
+              <motion.div
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, ease: "easeOut", delay: 0.15 }}
+                className="pointer-events-none absolute left-4 top-4 flex flex-col gap-2"
+              >
+                <FuelLegend />
+              </motion.div>
+              {initialData.projects.length === 0 ? (
+                <div className="absolute left-6 bottom-6 rounded-md border border-border bg-card/90 px-4 py-3 text-sm text-muted-foreground shadow-md backdrop-blur">
+                  Set <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">DATABASE_URL</code>, run migrations, and ingest ERCOT data to populate the map.
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </motion.section>
+
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: "easeOut", delay: 0.2 }}
-          className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card"
+          className="flex flex-col overflow-hidden bg-card"
         >
           <div className="shrink-0 border-b border-border px-4 py-3">
             <div className="flex flex-wrap items-center gap-3">
@@ -1192,111 +1220,6 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
           )}
         </motion.div>
       </section>
-
-      <motion.section
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.28, ease: "easeOut" }}
-        className="fixed z-10 overflow-hidden rounded-md border border-border bg-card shadow-2xl"
-        style={mapPanelStyle(mapMode, mapSize)}
-        aria-label="Project map"
-      >
-        <div className="flex h-11 items-center justify-between gap-3 border-b border-border bg-card/95 px-3 backdrop-blur">
-          <div className="flex min-w-0 items-center gap-2">
-            <Layers className="h-4 w-4 text-muted-foreground" />
-            <span className="truncate font-mono text-xs tabular-nums text-muted-foreground">
-              <NumberTicker value={kpis.visibleProjects} className="text-foreground" /> projects visible
-            </span>
-          </div>
-          <div className="flex items-center gap-1">
-            {mapMode === "minimized" ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setMapMode("normal")}
-                aria-label="Restore map"
-                title="Restore map"
-              >
-                <Maximize2 className="h-4 w-4" />
-              </Button>
-            ) : (
-              <>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setMapMode("minimized")}
-                  aria-label="Minimize map"
-                  title="Minimize map"
-                >
-                  <Minimize2 className="h-4 w-4" />
-                </Button>
-                <Button
-                  type="button"
-                  variant={mapMode === "fullscreen" ? "secondary" : "ghost"}
-                  size="sm"
-                  onClick={() => setMapMode(mapMode === "fullscreen" ? "normal" : "fullscreen")}
-                  aria-label={mapMode === "fullscreen" ? "Exit fullscreen map" : "Fullscreen map"}
-                  title={mapMode === "fullscreen" ? "Exit fullscreen map" : "Fullscreen map"}
-                >
-                  {mapMode === "fullscreen" ? (
-                    <Minimize2 className="h-4 w-4" />
-                  ) : (
-                    <Maximize2 className="h-4 w-4" />
-                  )}
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
-        <div className={mapMode === "minimized" ? "hidden" : "relative h-[calc(100%-2.75rem)]"}>
-          <div ref={mapContainerRef} className="absolute inset-0" />
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, ease: "easeOut", delay: 0.15 }}
-            className="pointer-events-none absolute left-4 top-4 flex flex-col gap-2"
-          >
-            <FuelLegend />
-          </motion.div>
-          {initialData.projects.length === 0 ? (
-            <div className="absolute left-6 bottom-6 rounded-md border border-border bg-card/90 px-4 py-3 text-sm text-muted-foreground shadow-md backdrop-blur">
-              Set <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">DATABASE_URL</code>, run migrations, and ingest ERCOT data to populate the map.
-            </div>
-          ) : null}
-          {mapMode === "normal" ? (
-            <div
-              role="separator"
-              aria-label="Resize map window"
-              tabIndex={0}
-              onPointerDown={handleMapResizePointerDown}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowRight") {
-                  event.preventDefault()
-                  setMapSize((current) => ({ ...current, width: Math.min(window.innerWidth - 64, current.width + 24) }))
-                }
-                if (event.key === "ArrowLeft") {
-                  event.preventDefault()
-                  setMapSize((current) => ({ ...current, width: Math.max(360, current.width - 24) }))
-                }
-                if (event.key === "ArrowDown") {
-                  event.preventDefault()
-                  setMapSize((current) => ({ ...current, height: Math.min(window.innerHeight - 128, current.height + 24) }))
-                }
-                if (event.key === "ArrowUp") {
-                  event.preventDefault()
-                  setMapSize((current) => ({ ...current, height: Math.max(260, current.height - 24) }))
-                }
-              }}
-              className="absolute bottom-0 right-0 grid h-8 w-8 cursor-nwse-resize place-items-center rounded-tl-md border-l border-t border-border bg-card/95 text-muted-foreground outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-              title="Drag to resize map"
-            >
-              <GripHorizontal className="h-4 w-4 rotate-[-45deg]" />
-            </div>
-          ) : null}
-        </div>
-      </motion.section>
 
       {selectedProject ? (
         <ProjectDrawer project={selectedProject} onClose={() => setSelectedProject(null)} />
