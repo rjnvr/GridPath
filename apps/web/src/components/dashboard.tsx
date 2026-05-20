@@ -96,6 +96,7 @@ type ProjectFeatureCollection = GeoJSON.FeatureCollection<
     fuelKey: string
     offsetX: number
     offsetY: number
+    offset: [number, number]
     currentPhase: string
     currentStatus: string
     filedDate: string | null
@@ -616,6 +617,7 @@ function projectsToGeoJson(projects: GridProject[]): ProjectFeatureCollection {
           fuelKey: normalizeFuelKey(project.fuelType),
           offsetX: spread.offsetX,
           offsetY: spread.offsetY,
+          offset: [spread.offsetX, spread.offsetY],
           currentPhase: project.currentPhase ?? "Unknown",
           currentStatus: project.currentStatus ?? "Unknown",
           filedDate: project.filedDate
@@ -1061,8 +1063,9 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
           ],
           "icon-offset": [
             "array",
-            ["number", ["get", "offsetX"]],
-            ["number", ["get", "offsetY"]]
+            "number",
+            2,
+            ["get", "offset"]
           ],
           "icon-allow-overlap": true,
           "icon-ignore-placement": true
