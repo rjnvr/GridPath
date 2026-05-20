@@ -42,7 +42,7 @@ jobs:
           AUTH_URL: ${{ secrets.AUTH_URL }}
         run: python -m gridpath_ingestion.watchlist_alerts
       - name: Notify Slack on failure
-        if: failure() && secrets.SLACK_WEBHOOK_URL != ''
+        if: failure() && env.SLACK_WEBHOOK_URL != ''
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
