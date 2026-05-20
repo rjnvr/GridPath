@@ -89,14 +89,16 @@ type ProjectFeatureCollection = GeoJSON.FeatureCollection<
   GeoJSON.Point,
   {
     id: string
-    queueId: string
+    projectIds: string[]
+    projectCount: number
+    queueIds: string[]
     projectName: string
+    projectNames: string[]
     mwRequested: number | null
+    totalMwRequested: number | null
     fuelType: string
     fuelKey: string
-    offsetX: number
-    offsetY: number
-    offset: [number, number]
+    fuelSummary: string
     currentPhase: string
     currentStatus: string
     filedDate: string | null
@@ -139,7 +141,6 @@ type PanelMode = "projects" | "events"
 type MapMode = "normal" | "fullscreen"
 
 const MAP_DEFAULT_HEIGHT = 620
-const MARKER_SPREAD_RADIUS = 18
 const MAP_VIEW_BOUNDS = {
   all: [
     [-124.8, 25.2],
@@ -609,34 +610,40 @@ function projectsToGeoJson(projects: GridProject[]): ProjectFeatureCollection {
     }
     return Number.isFinite(project.lat) && Number.isFinite(project.lng)
   })
-  const coordinateCounts = new Map<string, number>()
+  const projectsByCoordinate = new Map<string, GridProject[]>()
 
   for (const project of visibleProjects) {
     const key = `${(project.lng as number).toFixed(5)},${(project.lat as number).toFixed(5)}`
-    coordinateCounts.set(key, (coordinateCounts.get(key) ?? 0) + 1)
+    const bucket = projectsByCoordinate.get(key) ?? []
+    bucket.push(project)
+    projectsByCoordinate.set(key, bucket)
   }
-
-  const coordinateIndexes = new Map<string, number>()
 
   return {
     type: "FeatureCollection",
-    features: visibleProjects.map((project) => {
-      const coordinateKey = `${(project.lng as number).toFixed(5)},${(project.lat as number).toFixed(5)}`
-      const coordinateTotal = coordinateCounts.get(coordinateKey) ?? 1
-      const coordinateIndex = coordinateIndexes.get(coordinateKey) ?? 0
-      coordinateIndexes.set(coordinateKey, coordinateIndex + 1)
+    features: Array.from(projectsByCoordinate.values()).map((coordinateProjects) => {
+      const [project] = coordinateProjects
+      const fuelCounts = new Map<string, number>()
+      let totalMw = 0
+      let hasMw = false
 
-      const spread =
-        coordinateTotal > 1
-          ? {
-              offsetX:
-                Math.cos((Math.PI * 2 * coordinateIndex) / coordinateTotal) *
-                MARKER_SPREAD_RADIUS,
-              offsetY:
-                Math.sin((Math.PI * 2 * coordinateIndex) / coordinateTotal) *
-                MARKER_SPREAD_RADIUS
-            }
-          : { offsetX: 0, offsetY: 0 }
+      for (const groupedProject of coordinateProjects) {
+        const fuelKey = normalizeFuelKey(groupedProject.fuelType)
+        fuelCounts.set(fuelKey, (fuelCounts.get(fuelKey) ?? 0) + 1)
+        if (groupedProject.mwRequested !== null) {
+          totalMw += groupedProject.mwRequested
+          hasMw = true
+        }
+      }
+
+      const dominantFuel =
+        [...fuelCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "other"
+      const fuelSummary = [...fuelCounts.entries()]
+        .map(([fuel, count]) => `${count} ${fuel}`)
+        .join(", ")
+      const projectNames = coordinateProjects.map(
+        (groupedProject) => groupedProject.projectName ?? groupedProject.queueId
+      )
 
       return {
         type: "Feature",
@@ -646,17 +653,25 @@ function projectsToGeoJson(projects: GridProject[]): ProjectFeatureCollection {
         },
         properties: {
           id: project.id,
-          queueId: project.queueId,
-          projectName: project.projectName ?? project.queueId,
-          mwRequested: project.mwRequested,
-          fuelType: project.fuelType ?? "unknown",
-          fuelKey: normalizeFuelKey(project.fuelType),
-          offsetX: spread.offsetX,
-          offsetY: spread.offsetY,
-          offset: [spread.offsetX, spread.offsetY],
-          currentPhase: project.currentPhase ?? "Unknown",
-          currentStatus: project.currentStatus ?? "Unknown",
-          filedDate: project.filedDate
+          projectIds: coordinateProjects.map((groupedProject) => groupedProject.id),
+          projectCount: coordinateProjects.length,
+          queueIds: coordinateProjects.map((groupedProject) => groupedProject.queueId),
+          projectName:
+            coordinateProjects.length === 1
+              ? projectNames[0]
+              : `${coordinateProjects.length} projects at this location`,
+          projectNames,
+          mwRequested: hasMw ? totalMw : null,
+          totalMwRequested: hasMw ? totalMw : null,
+          fuelType:
+            coordinateProjects.length === 1 ? project.fuelType ?? "unknown" : "Multiple fuels",
+          fuelKey: dominantFuel,
+          fuelSummary,
+          currentPhase:
+            coordinateProjects.length === 1 ? project.currentPhase ?? "Unknown" : "Mixed phases",
+          currentStatus:
+            coordinateProjects.length === 1 ? project.currentStatus ?? "Unknown" : "Mixed statuses",
+          filedDate: coordinateProjects.length === 1 ? project.filedDate : null
         }
       }
     })
@@ -682,17 +697,49 @@ function substationsToGeoJson(substations: Substation[]): SubstationFeatureColle
   }
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;")
+}
+
 function projectPopupHtml(project: ProjectFeatureCollection["features"][number]["properties"]) {
-  const mw = project.mwRequested !== null ? project.mwRequested.toLocaleString() : "—"
+  const mw = project.totalMwRequested !== null ? project.totalMwRequested.toLocaleString() : "—"
+  const listedProjects = project.projectNames.slice(0, 5)
+  const remainingProjects = Math.max(0, project.projectCount - listedProjects.length)
+  const projectList =
+    project.projectCount > 1
+      ? `
+      <div style="display:flex;flex-direction:column;gap:2px;margin-top:2px">
+        ${listedProjects
+          .map(
+            (name) =>
+              `<span style="font-size:11px;line-height:1.35;color:hsl(var(--muted-foreground))">${escapeHtml(name)}</span>`
+          )
+          .join("")}
+        ${
+          remainingProjects > 0
+            ? `<span style="font-size:11px;color:hsl(var(--muted-foreground))">+${remainingProjects} more</span>`
+            : ""
+        }
+      </div>`
+      : ""
   return `
     <div style="display:flex;flex-direction:column;gap:4px;min-width:180px">
-      <span style="font-family:var(--font-geist-mono),monospace;font-size:10px;letter-spacing:0.04em;text-transform:uppercase;color:hsl(var(--muted-foreground))">${project.fuelType}</span>
-      <strong style="font-size:13px;line-height:1.3">${project.projectName}</strong>
+      <span style="font-family:var(--font-geist-mono),monospace;font-size:10px;letter-spacing:0.04em;text-transform:uppercase;color:hsl(var(--muted-foreground))">${escapeHtml(project.projectCount > 1 ? project.fuelSummary : project.fuelType)}</span>
+      <strong style="font-size:13px;line-height:1.3">${escapeHtml(project.projectName)}</strong>
       <div style="display:flex;align-items:baseline;gap:6px;font-family:var(--font-geist-mono),monospace;font-size:12px;font-variant-numeric:tabular-nums">
         <span style="color:hsl(var(--foreground));font-weight:500">${mw}</span>
-        <span style="color:hsl(var(--muted-foreground))">MW · ${project.currentPhase}</span>
+        <span style="color:hsl(var(--muted-foreground))">MW · ${escapeHtml(project.currentPhase)}</span>
       </div>
-      <span style="font-size:11px;color:hsl(var(--muted-foreground))">Filed ${project.filedDate ?? "—"}</span>
+      ${
+        project.projectCount === 1
+          ? `<span style="font-size:11px;color:hsl(var(--muted-foreground))">Filed ${escapeHtml(project.filedDate ?? "—")}</span>`
+          : projectList
+      }
     </div>`
 }
 
@@ -1181,7 +1228,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
           "icon-size": [
             "interpolate",
             ["linear"],
-            ["coalesce", ["get", "mwRequested"], 0],
+            ["coalesce", ["get", "totalMwRequested"], 0],
             0,
             0.55,
             500,
@@ -1189,17 +1236,35 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             1000,
             1
           ],
-          "icon-offset": [
-            "array",
-            "number",
-            2,
-            ["get", "offset"]
-          ],
           "icon-allow-overlap": true,
           "icon-ignore-placement": true
         },
         paint: {
           "icon-opacity": 0.96
+        }
+      })
+      map.addLayer({
+        id: "project-location-count",
+        type: "symbol",
+        source: "projects",
+        filter: [
+          "all",
+          ["!", ["has", "point_count"]],
+          [">", ["get", "projectCount"], 1]
+        ],
+        layout: {
+          "text-field": ["to-string", ["get", "projectCount"]],
+          "text-font": MAP_LABEL_FONT,
+          "text-size": 10,
+          "text-offset": [1.05, -1.05],
+          "text-allow-overlap": true,
+          "text-ignore-placement": true
+        },
+        paint: {
+          "text-color": "#f8fafc",
+          "text-halo-color": "rgba(15, 15, 15, 0.96)",
+          "text-halo-width": 1.4,
+          "text-halo-blur": 0
         }
       })
 
@@ -1248,7 +1313,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
       map.on("click", "projects", (event) => {
         const feature = event.features?.[0] as ProjectFeatureCollection["features"][number] | undefined
         const projectId = feature?.properties.id
-        if (projectId) {
+        if (projectId && feature?.properties.projectCount === 1) {
           setSelectedProject(projectsById.get(projectId) ?? null)
         }
       })
