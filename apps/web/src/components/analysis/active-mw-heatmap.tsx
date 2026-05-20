@@ -42,6 +42,13 @@ function tileStyle(): maplibregl.StyleSpecification | string {
     },
     layers: [
       {
+        id: "background",
+        type: "background",
+        paint: {
+          "background-color": "#151515"
+        }
+      },
+      {
         id: "dark-matter",
         type: "raster",
         source: "darkMatter",
