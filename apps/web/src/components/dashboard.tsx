@@ -774,6 +774,14 @@ function isActiveProject(project: GridProject): boolean {
   return !/(withdrawn|cancelled|canceled|energized|completed|retired|inactive)/.test(statusText)
 }
 
+function isWorkingMapProject(project: GridProject): boolean {
+  if (project.withdrawnDate) {
+    return false
+  }
+  const statusText = [project.currentStatus, project.currentPhase].filter(Boolean).join(" ").toLowerCase()
+  return !/(withdrawn|cancelled|canceled|retired|inactive)/.test(statusText)
+}
+
 function passesStatus(project: GridProject, status: string): boolean {
   if (status === "all") return true
   if (status === "active") return isActiveProject(project)
@@ -856,7 +864,11 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
       [
         ...new Set(
           initialData.projects
-            .filter((project) => filters.iso === "all" || project.iso === filters.iso)
+            .filter(
+              (project) =>
+                (filters.iso === "all" || project.iso === filters.iso) &&
+                isWorkingMapProject(project)
+            )
             .map((project) => project.currentStatus)
             .filter(Boolean)
         )
@@ -918,6 +930,10 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
       eventsLast7d
     }
   }, [filteredProjects, initialData.recentEvents])
+  const mapProjects = useMemo(
+    () => filteredProjects.filter(isWorkingMapProject),
+    [filteredProjects]
+  )
 
   const filteredEvents = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLowerCase()
@@ -936,11 +952,11 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
       )
     })
   }, [eventFilters, initialData.recentEvents, searchQuery])
-  const filteredProjectsRef = useRef<GridProject[]>(filteredProjects)
+  const mapProjectsRef = useRef<GridProject[]>(mapProjects)
 
   useEffect(() => {
-    filteredProjectsRef.current = filteredProjects
-  }, [filteredProjects])
+    mapProjectsRef.current = mapProjects
+  }, [mapProjects])
 
   const table = useReactTable({
     data: filteredProjects,
@@ -1063,7 +1079,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
 
       map.addSource("projects", {
         type: "geojson",
-        data: projectsToGeoJson(filteredProjectsRef.current),
+        data: projectsToGeoJson(mapProjectsRef.current),
         cluster: true,
         clusterRadius: 50,
         clusterMaxZoom: 8
@@ -1274,8 +1290,8 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     if (!map?.isStyleLoaded() || !map.getSource("projects")) {
       return
     }
-    ;(map.getSource("projects") as GeoJSONSource).setData(projectsToGeoJson(filteredProjects))
-  }, [filteredProjects])
+    ;(map.getSource("projects") as GeoJSONSource).setData(projectsToGeoJson(mapProjects))
+  }, [mapProjects])
 
   useEffect(() => {
     const map = mapRef.current
