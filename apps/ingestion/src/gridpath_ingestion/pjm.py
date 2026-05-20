@@ -14,6 +14,7 @@ import json
 import os
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -27,7 +28,7 @@ from gridpath_ingestion.db import record_source_report_failure, upsert_projects
 from gridpath_ingestion.models import QueueProject, SourceReport
 
 DEFAULT_PJM_QUEUE_URL = (
-    "https://www.pjm.com/-/media/etools/oasis/system-information/new-services-queue.ashx"
+    "https://www.pjm.com/pjmfiles/media/planning/queues-data/PlanningQueues.xml"
 )
 
 # PJM publishes one workbook with multiple service-type sheets; the active
@@ -85,6 +86,28 @@ COLUMN_ALIASES = {
     "Transmission Owner": "owner_company",
     "Developer": "owner_company",
     "Interconnection Customer": "owner_company",
+}
+
+XML_FIELD_ALIASES = {
+    "ProjectNumber": "queue_id",
+    "Name": "project_name",
+    "CommercialName": "project_name",
+    "MaximumFacilityOutput": "mw_requested",
+    "MWO": "mw_requested",
+    "MWCapacity": "mw_requested",
+    "MWEnergy": "mw_energy",
+    "MWInService": "mw_in_service",
+    "Fuel": "fuel_type",
+    "County": "county",
+    "State": "state",
+    "Status": "current_status",
+    "SubmittedDate": "filed_date",
+    "Interim-InterconnectionService-GenerationInterconnectionAgreement": "ia_signed_date",
+    "ActualInServiceDate": "energized_date",
+    "WithdrawalDate": "withdrawn_date",
+    "WithdrawnDate": "withdrawn_date",
+    "TransmissionOwner": "owner_company",
+    "Developer": "owner_company",
 }
 
 FUEL_MAP = {
@@ -245,6 +268,73 @@ def row_to_project(row: dict[str, Any], source_url: str | None = None) -> QueueP
     )
 
 
+def xml_project_to_row(element: ET.Element) -> dict[str, Any]:
+    row: dict[str, Any] = {}
+    for child in element:
+        text = clean_text(child.text)
+        if text == "N/A":
+            text = None
+        row[child.tag] = text
+    return row
+
+
+def xml_row_to_project(row: dict[str, Any], source_url: str | None = None) -> QueueProject | None:
+    mapped: dict[str, Any] = {}
+    for source, target in XML_FIELD_ALIASES.items():
+        if source in row:
+            value = row[source]
+            if target not in mapped or mapped[target] in (None, "") or pd.isna(mapped[target]):
+                mapped[target] = value
+
+    queue_id = clean_text(mapped.get("queue_id"))
+    if not queue_id:
+        return None
+
+    county = clean_text(mapped.get("county"))
+    state = clean_text(mapped.get("state"))
+    lat, lng = centroid_for_county(county, state) if state else (None, None)
+    current_status = clean_text(mapped.get("current_status"))
+
+    return QueueProject(
+        iso="PJM",
+        queue_id=queue_id,
+        project_name=clean_text(mapped.get("project_name")),
+        mw_requested=parse_decimal(mapped.get("mw_requested")),
+        fuel_type=normalize_fuel(mapped.get("fuel_type")),
+        county=county,
+        state=state,
+        lat=lat,
+        lng=lng,
+        current_phase=normalize_phase(current_status),
+        current_status=current_status,
+        filed_date=parse_date(mapped.get("filed_date")),
+        ia_signed_date=None,
+        energized_date=parse_date(mapped.get("energized_date")),
+        withdrawn_date=parse_date(mapped.get("withdrawn_date")),
+        owner_company=clean_text(mapped.get("owner_company")),
+        raw_source_url=source_url,
+        raw_data=row,
+    )
+
+
+def parse_xml_report(path: Path, source_url: str | None = None) -> list[QueueProject]:
+    root = ET.fromstring(path.read_text(encoding="utf-8-sig"))
+    projects: list[QueueProject] = []
+    for element in root.findall(".//Project"):
+        project = xml_row_to_project(xml_project_to_row(element), source_url)
+        if project:
+            projects.append(project)
+    if not projects:
+        raise ValueError("PJM schema drift detected. No project rows in XML export.")
+    return projects
+
+
+def parse_report(path: Path, source_url: str | None = None) -> list[QueueProject]:
+    if path.suffix.lower() == ".xml":
+        return parse_xml_report(path, source_url)
+    return parse_workbook(path, source_url)
+
+
 def parse_workbook(path: Path, source_url: str | None = None) -> list[QueueProject]:
     projects: list[QueueProject] = []
     workbook = pd.ExcelFile(path)
@@ -270,7 +360,10 @@ def parse_workbook(path: Path, source_url: str | None = None) -> list[QueueProje
 def download_report(url: str) -> Path:
     response = httpx.get(url, timeout=60.0, follow_redirects=True)
     response.raise_for_status()
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as handle:
+    content_type = response.headers.get("content-type", "").lower()
+    lower_url = url.lower()
+    suffix = ".xml" if "xml" in content_type or lower_url.endswith(".xml") else ".xlsx"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as handle:
         handle.write(response.content)
         return Path(handle.name)
 
@@ -294,7 +387,9 @@ def source_report_for_url(url: str) -> SourceReport:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Ingest PJM New Services Queue into Neon Postgres.")
+    parser = argparse.ArgumentParser(
+        description="Ingest PJM New Services Queue into Neon Postgres."
+    )
     parser.add_argument("--file", type=Path, help="Local PJM queue workbook")
     parser.add_argument(
         "--force",
@@ -325,7 +420,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
-        projects = parse_workbook(workbook_path, report_source_url)
+        projects = parse_report(workbook_path, report_source_url)
     except Exception as exc:
         if database_url and not args.dry_run:
             record_source_report_failure(database_url, source_report, str(exc))

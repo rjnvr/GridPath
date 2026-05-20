@@ -2,7 +2,7 @@ import { Database } from "lucide-react"
 import Link from "next/link"
 
 import { HeadroomExplorer } from "@/components/headroom/headroom-explorer"
-import { getHeadroomReport } from "@/lib/data"
+import { getHeadroomHeatmapProjects, getHeadroomReport } from "@/lib/data"
 
 export const dynamic = "force-dynamic"
 export const metadata = {
@@ -26,8 +26,10 @@ export default async function PublicHeadroomSharePage({ searchParams }: PageProp
   const lng = parseNumber(params.lng)
   const radius = parseNumber(params.radius) ?? 25
 
-  const report =
-    lat !== null && lng !== null ? await getHeadroomReport(lat, lng, radius) : null
+  const [report, heatmapProjects] = await Promise.all([
+    lat !== null && lng !== null ? getHeadroomReport(lat, lng, radius) : null,
+    getHeadroomHeatmapProjects()
+  ])
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -45,7 +47,12 @@ export default async function PublicHeadroomSharePage({ searchParams }: PageProp
       </header>
       <main className="flex-1 overflow-hidden">
         {report ? (
-          <HeadroomExplorer initialReport={report} initialRadius={radius} readOnly />
+          <HeadroomExplorer
+            initialReport={report}
+            initialRadius={radius}
+            heatmapProjects={heatmapProjects}
+            readOnly
+          />
         ) : (
           <div className="mx-auto max-w-md p-8 text-sm text-muted-foreground">
             This share link is missing a valid location. Ask the sender to regenerate the

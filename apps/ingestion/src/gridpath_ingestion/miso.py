@@ -1,9 +1,8 @@
 """MISO Generator Interconnection Queue ingestion.
 
-MISO publishes their active queue as an XLSX from
-https://www.misoenergy.org/planning/resource-utilization/generator-interconnection-queue/
-(public link rotates each cycle). The column layout is alias-based here so
-schema drift surfaces as a loud error rather than silent data loss.
+MISO's current public GI queue is exposed as JSON from the same data source
+used by its public queue page. Historical local XLSX exports are still
+supported for tests and backfills.
 """
 
 from __future__ import annotations
@@ -25,11 +24,8 @@ from gridpath_ingestion.centroids import centroid_for_county
 from gridpath_ingestion.db import record_source_report_failure, upsert_projects
 from gridpath_ingestion.models import QueueProject, SourceReport
 
-# Default URL points at the consolidated queue export. Override via env var
-# `MISO_QUEUE_URL` if MISO rotates the file path.
-DEFAULT_MISO_QUEUE_URL = (
-    "https://cdn.misoenergy.org/GI%20Queue/GI%20Queue.xlsx"
-)
+# Override via env var `MISO_QUEUE_URL` if MISO rotates the API path.
+DEFAULT_MISO_QUEUE_URL = "https://www.misoenergy.org/api/giqueue/getprojects"
 
 PROJECT_SHEETS = {
     "GI Queue",
@@ -140,6 +136,7 @@ PHASE_MAP = {
     "pre-dpp": "Feasibility",
     "predpp": "Feasibility",
     "active": "Active",
+    "gia": "IA Executed",
 }
 
 
@@ -257,6 +254,85 @@ def row_to_project(row: dict[str, Any], source_url: str | None = None) -> QueueP
     )
 
 
+def json_row_to_project(row: dict[str, Any], source_url: str | None = None) -> QueueProject | None:
+    queue_id = clean_text(row.get("projectNumber"))
+    if not queue_id:
+        return None
+
+    county = clean_text(row.get("county"))
+    state = clean_text(row.get("state"))
+    lat, lng = centroid_for_county(county, state) if state else (None, None)
+
+    current_status = clean_text(row.get("applicationStatus"))
+    study_phase = clean_text(row.get("studyPhase"))
+    post_gia_status = clean_text(row.get("postGIAStatus"))
+    phase_source = post_gia_status or study_phase or current_status
+    normalized_phase = normalize_phase(phase_source)
+
+    status_text = " ".join(
+        value
+        for value in (current_status, study_phase, post_gia_status)
+        if value is not None
+    ).lower()
+    is_energized = any(
+        marker in status_text
+        for marker in ("in service", "done", "completed", "commercial operation")
+    )
+    if is_energized:
+        normalized_phase = "Energized"
+
+    mw_requested = (
+        parse_decimal(row.get("summerNetMW"))
+        or parse_decimal(row.get("winterNetMW"))
+        or parse_decimal(row.get("dp1NrisMw"))
+        or parse_decimal(row.get("dp1ErisMw"))
+        or parse_decimal(row.get("dp2NrisMw"))
+        or parse_decimal(row.get("dp2ErisMw"))
+    )
+
+    return QueueProject(
+        iso="MISO",
+        queue_id=queue_id,
+        project_name=clean_text(row.get("poiName")),
+        mw_requested=mw_requested,
+        fuel_type=normalize_fuel(row.get("fuelType") or row.get("facilityType")),
+        county=county,
+        state=state,
+        lat=lat,
+        lng=lng,
+        current_phase=normalized_phase,
+        current_status=current_status,
+        filed_date=parse_date(row.get("queueDate")),
+        ia_signed_date=None,
+        energized_date=parse_date(row.get("inService")) if is_energized else None,
+        withdrawn_date=parse_date(row.get("withdrawnDate")),
+        owner_company=clean_text(row.get("transmissionOwner")),
+        raw_source_url=source_url,
+        raw_data=row,
+    )
+
+
+def parse_json_report(path: Path, source_url: str | None = None) -> list[QueueProject]:
+    payload = json.loads(path.read_text())
+    if not isinstance(payload, list):
+        raise ValueError("MISO schema drift detected. Expected JSON list payload.")
+
+    projects: list[QueueProject] = []
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        project = json_row_to_project(row, source_url)
+        if project:
+            projects.append(project)
+    return projects
+
+
+def parse_report(path: Path, source_url: str | None = None) -> list[QueueProject]:
+    if path.suffix.lower() == ".json":
+        return parse_json_report(path, source_url)
+    return parse_workbook(path, source_url)
+
+
 def parse_workbook(path: Path, source_url: str | None = None) -> list[QueueProject]:
     projects: list[QueueProject] = []
     workbook = pd.ExcelFile(path)
@@ -281,7 +357,9 @@ def parse_workbook(path: Path, source_url: str | None = None) -> list[QueueProje
 def download_report(url: str) -> Path:
     response = httpx.get(url, timeout=60.0, follow_redirects=True)
     response.raise_for_status()
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as handle:
+    content_type = response.headers.get("content-type", "").lower()
+    suffix = ".json" if "json" in content_type or url.lower().endswith(".json") else ".xlsx"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as handle:
         handle.write(response.content)
         return Path(handle.name)
 
@@ -338,7 +416,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
-        projects = parse_workbook(workbook_path, report_source_url)
+        projects = parse_report(workbook_path, report_source_url)
     except Exception as exc:
         if database_url and not args.dry_run:
             record_source_report_failure(database_url, source_report, str(exc))
