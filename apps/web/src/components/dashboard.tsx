@@ -344,6 +344,8 @@ const SEVERITY_STYLES: Record<QueueEventSeverity | string, string> = {
   info: "border-border bg-muted text-muted-foreground"
 }
 
+const MAP_LABEL_FONT = ["Open Sans Regular", "Arial Unicode MS Regular"]
+
 function eventTypeLabel(value: string): string {
   return EVENT_TYPE_LABELS[value] ?? value.replaceAll("_", " ")
 }
@@ -384,12 +386,12 @@ function tileStyle() {
     version: 8,
     glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
     sources: {
-      darkMatter: {
+      voyager: {
         type: "raster",
         tiles: [
-          "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-          "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-          "https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"
+          "https://a.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png",
+          "https://b.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png",
+          "https://c.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png"
         ],
         tileSize: 256,
         attribution: "© OpenStreetMap contributors © CARTO"
@@ -397,13 +399,14 @@ function tileStyle() {
     },
     layers: [
       {
-        id: "dark-matter",
+        id: "voyager",
         type: "raster",
-        source: "darkMatter",
+        source: "voyager",
         paint: {
-          "raster-brightness-min": 0.12,
-          "raster-contrast": -0.05,
-          "raster-saturation": -0.1
+          "raster-brightness-min": 0.7,
+          "raster-brightness-max": 0.98,
+          "raster-contrast": -0.12,
+          "raster-saturation": 0.25
         }
       }
     ]
@@ -441,17 +444,21 @@ function fuelMarkerImage(fuel: keyof typeof fuelColors): ImageData {
   const bgRadius = 13
   const color = fuelColors[fuel]
 
-  ctx.shadowColor = "rgba(0, 0, 0, 0.75)"
-  ctx.shadowBlur = 4
+  ctx.shadowColor = "rgba(15, 23, 42, 0.32)"
+  ctx.shadowBlur = 5
   ctx.shadowOffsetY = 1
+  ctx.fillStyle = "rgba(255, 255, 255, 0.94)"
+  ctx.beginPath()
+  ctx.arc(cx, cy, bgRadius, 0, Math.PI * 2)
+  ctx.fill()
+
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetY = 0
   ctx.lineWidth = 1.25
   ctx.strokeStyle = color
   ctx.beginPath()
   ctx.arc(cx, cy, bgRadius, 0, Math.PI * 2)
   ctx.stroke()
-
-  ctx.shadowBlur = 0
-  ctx.shadowOffsetY = 0
 
   drawFuelMarkerGlyph(ctx, fuel, color, cx, cy)
 
@@ -507,7 +514,8 @@ function drawFallbackFuelMarkerGlyph(
   fuel: keyof typeof fuelColors,
   color: string,
   cx: number,
-  cy: number
+  cy: number,
+  bgRadius = 13
 ) {
   const labels: Record<keyof typeof fuelColors, string> = {
     solar: "S",
@@ -519,6 +527,22 @@ function drawFallbackFuelMarkerGlyph(
   }
 
   ctx.save()
+  ctx.shadowColor = "rgba(15, 23, 42, 0.32)"
+  ctx.shadowBlur = 5
+  ctx.shadowOffsetY = 1
+  ctx.fillStyle = "rgba(255, 255, 255, 0.94)"
+  ctx.beginPath()
+  ctx.arc(cx, cy, bgRadius, 0, Math.PI * 2)
+  ctx.fill()
+
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetY = 0
+  ctx.lineWidth = 1.25
+  ctx.strokeStyle = color
+  ctx.beginPath()
+  ctx.arc(cx, cy, bgRadius, 0, Math.PI * 2)
+  ctx.stroke()
+
   ctx.fillStyle = color
   ctx.font = "700 12px system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
   ctx.textAlign = "center"
@@ -572,7 +596,12 @@ function fitMapToIso(map: MapLibreMap, iso: string, duration = 600) {
 }
 
 function projectsToGeoJson(projects: GridProject[]): ProjectFeatureCollection {
-  const visibleProjects = projects.filter((project) => project.lat !== null && project.lng !== null)
+  const visibleProjects = projects.filter((project) => {
+    if (project.lat === null || project.lng === null) {
+      return false
+    }
+    return Number.isFinite(project.lat) && Number.isFinite(project.lng)
+  })
   const coordinateCounts = new Map<string, number>()
 
   for (const project of visibleProjects) {
@@ -949,17 +978,17 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         minzoom: 3,
         layout: {
           "text-field": ["get", "name"],
-          "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+          "text-font": MAP_LABEL_FONT,
           "text-size": ["interpolate", ["linear"], ["zoom"], 3, 12, 6, 18],
-          "text-letter-spacing": 0.08,
+          "text-letter-spacing": 0.04,
           "text-allow-overlap": false,
           "text-ignore-placement": false
         },
         paint: {
-          "text-color": "#f5b942",
-          "text-halo-color": "rgba(10, 11, 13, 0.92)",
-          "text-halo-width": 2.2,
-          "text-halo-blur": 0.4,
+          "text-color": "#243142",
+          "text-halo-color": "rgba(255, 255, 255, 0.92)",
+          "text-halo-width": 1.4,
+          "text-halo-blur": 0,
           "text-opacity": 0.92
         }
       })
@@ -971,7 +1000,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         minzoom: 4.4,
         layout: {
           "text-field": ["get", "name"],
-          "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
+          "text-font": MAP_LABEL_FONT,
           "text-size": ["interpolate", ["linear"], ["zoom"], 4, 11, 7, 15],
           "text-offset": [0, 0.65],
           "text-variable-anchor": ["top", "bottom", "left", "right"],
@@ -999,11 +1028,11 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             "#5b9bd5",
             "Sacramento",
             "#a78bfa",
-            "#f5b942"
+            "#2563eb"
           ],
-          "text-halo-color": "rgba(10, 11, 13, 0.94)",
-          "text-halo-width": 1.8,
-          "text-halo-blur": 0.25,
+          "text-halo-color": "rgba(255, 255, 255, 0.95)",
+          "text-halo-width": 1.3,
+          "text-halo-blur": 0,
           "text-opacity": 0.96
         }
       })
@@ -1018,10 +1047,10 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         source: "substations",
         paint: {
           "circle-radius": 2.5,
-          "circle-color": "#92959c",
-          "circle-opacity": 0.5,
+          "circle-color": "#64748b",
+          "circle-opacity": 0.55,
           "circle-stroke-width": 0.5,
-          "circle-stroke-color": "#0e0f10"
+          "circle-stroke-color": "#ffffff"
         }
       })
 
@@ -1062,7 +1091,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             30
           ],
           "circle-stroke-width": 1.5,
-          "circle-stroke-color": "rgba(10, 11, 13, 0.85)"
+          "circle-stroke-color": "rgba(255, 255, 255, 0.92)"
         }
       })
       map.addLayer({
@@ -1072,15 +1101,53 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         filter: ["has", "point_count"],
         layout: {
           "text-field": ["get", "point_count_abbreviated"],
-          "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
-          "text-size": 12,
+          "text-font": MAP_LABEL_FONT,
+          "text-size": 13,
           "text-allow-overlap": true,
           "text-ignore-placement": true
         },
         paint: {
-          "text-color": "#0a0b0d",
-          "text-halo-color": "rgba(255, 255, 255, 0.35)",
-          "text-halo-width": 0.6
+          "text-color": "#111827",
+          "text-halo-color": "rgba(255, 255, 255, 0.86)",
+          "text-halo-width": 0.8,
+          "text-halo-blur": 0
+        }
+      })
+      map.addLayer({
+        id: "project-points",
+        type: "circle",
+        source: "projects",
+        filter: ["!", ["has", "point_count"]],
+        paint: {
+          "circle-color": [
+            "match",
+            ["get", "fuelKey"],
+            "solar",
+            fuelColors.solar,
+            "wind",
+            fuelColors.wind,
+            "storage",
+            fuelColors.storage,
+            "gas",
+            fuelColors.gas,
+            "hydro",
+            fuelColors.hydro,
+            fuelColors.other
+          ],
+          "circle-radius": [
+            "interpolate",
+            ["linear"],
+            ["coalesce", ["get", "mwRequested"], 0],
+            0,
+            5,
+            500,
+            7,
+            1000,
+            9
+          ],
+          "circle-opacity": 0.72,
+          "circle-stroke-color": "rgba(255, 255, 255, 0.9)",
+          "circle-stroke-width": 1
         }
       })
       map.addLayer({
