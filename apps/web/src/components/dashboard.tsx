@@ -89,6 +89,8 @@ type ProjectFeatureCollection = GeoJSON.FeatureCollection<
   GeoJSON.Point,
   {
     id: string
+    projectIds: string
+    projectCount: number
     queueId: string
     projectName: string
     mwRequested: number | null
@@ -136,7 +138,6 @@ type PanelMode = "projects" | "events"
 type MapMode = "normal" | "fullscreen"
 
 const MAP_DEFAULT_HEIGHT = 620
-const COLOCATED_JITTER_BASE_DEGREES = 0.035
 const MAP_VIEW_BOUNDS = {
   all: [
     [-124.8, 25.2],
@@ -609,7 +610,7 @@ function projectsToGeoJson(projects: GridProject[]): ProjectFeatureCollection {
 
   const colocatedGroups = new Map<string, GridProject[]>()
   for (const project of visibleProjects) {
-    const key = `${(project.lng as number).toFixed(4)},${(project.lat as number).toFixed(4)}`
+    const key = projectCoordinateKey(project)
     const group = colocatedGroups.get(key)
     if (group) {
       group.push(project)
@@ -618,54 +619,41 @@ function projectsToGeoJson(projects: GridProject[]): ProjectFeatureCollection {
     }
   }
 
-  const jitteredCoords = new Map<string, [number, number]>()
-  for (const group of colocatedGroups.values()) {
-    if (group.length === 1) {
-      const only = group[0]
-      jitteredCoords.set(only.id, [only.lng as number, only.lat as number])
-      continue
-    }
-    const sorted = [...group].sort((a, b) => a.id.localeCompare(b.id))
-    const radius = COLOCATED_JITTER_BASE_DEGREES * Math.sqrt(sorted.length)
-    sorted.forEach((project, index) => {
-      const angle = (Math.PI * 2 * index) / sorted.length
-      const lat = project.lat as number
-      const lng = project.lng as number
-      const lngScale = 1 / Math.max(0.1, Math.cos((lat * Math.PI) / 180))
-      jitteredCoords.set(project.id, [
-        lng + Math.cos(angle) * radius * lngScale,
-        lat + Math.sin(angle) * radius
-      ])
-    })
-  }
-
   return {
     type: "FeatureCollection",
-    features: visibleProjects.map((project) => {
-      const coords = jitteredCoords.get(project.id) ?? [
-        project.lng as number,
-        project.lat as number
-      ]
+    features: Array.from(colocatedGroups.values()).map((group) => {
+      const sorted = [...group].sort((a, b) => a.id.localeCompare(b.id))
+      const project = sorted[0]
+      const totalMw = sorted.reduce((sum, item) => sum + (item.mwRequested ?? 0), 0)
       return {
         type: "Feature",
         geometry: {
           type: "Point",
-          coordinates: coords
+          coordinates: [project.lng as number, project.lat as number]
         },
         properties: {
           id: project.id,
+          projectIds: sorted.map((item) => item.id).join("|"),
+          projectCount: sorted.length,
           queueId: project.queueId,
-          projectName: project.projectName ?? project.queueId,
-          mwRequested: project.mwRequested,
+          projectName:
+            sorted.length === 1
+              ? project.projectName ?? project.queueId
+              : `${sorted.length} projects at this location`,
+          mwRequested: sorted.length === 1 ? project.mwRequested : totalMw,
           fuelType: project.fuelType ?? "unknown",
-          fuelKey: normalizeFuelKey(project.fuelType),
-          currentPhase: project.currentPhase ?? "Unknown",
-          currentStatus: project.currentStatus ?? "Unknown",
+          fuelKey: sorted.length === 1 ? normalizeFuelKey(project.fuelType) : "other",
+          currentPhase: sorted.length === 1 ? project.currentPhase ?? "Unknown" : "Multiple",
+          currentStatus: sorted.length === 1 ? project.currentStatus ?? "Unknown" : "Multiple",
           filedDate: project.filedDate
         }
       }
     })
   }
+}
+
+function projectCoordinateKey(project: GridProject): string {
+  return `${(project.lng as number).toFixed(6)},${(project.lat as number).toFixed(6)}`
 }
 
 function substationsToGeoJson(substations: Substation[]): SubstationFeatureCollection {
@@ -832,6 +820,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 50 })
   const [selectedProject, setSelectedProject] = useState<GridProject | null>(null)
+  const [selectedProjectGroup, setSelectedProjectGroup] = useState<GridProject[] | null>(null)
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const popupRef = useRef<maplibregl.Popup | null>(null)
@@ -1217,6 +1206,29 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
           "icon-opacity": 0.96
         }
       })
+      map.addLayer({
+        id: "project-point-count",
+        type: "symbol",
+        source: "projects",
+        filter: [
+          "all",
+          ["!", ["has", "point_count"]],
+          [">", ["get", "projectCount"], 1]
+        ],
+        layout: {
+          "text-field": ["to-string", ["get", "projectCount"]],
+          "text-font": MAP_LABEL_FONT,
+          "text-size": 11,
+          "text-allow-overlap": true,
+          "text-ignore-placement": true
+        },
+        paint: {
+          "text-color": "#ffffff",
+          "text-halo-color": "rgba(17, 24, 39, 0.8)",
+          "text-halo-width": 0.6,
+          "text-halo-blur": 0
+        }
+      })
 
       map.on("mouseenter", "project-clusters", () => {
         map.getCanvas().style.cursor = "pointer"
@@ -1259,13 +1271,40 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         popupRef.current?.remove()
         popupRef.current = null
       })
+      map.on("mouseenter", "project-point-count", () => {
+        map.getCanvas().style.cursor = "pointer"
+      })
+      map.on("mouseleave", "project-point-count", () => {
+        map.getCanvas().style.cursor = ""
+      })
+
+      function selectProjectFeature(
+        feature: ProjectFeatureCollection["features"][number] | undefined
+      ) {
+        if (!feature) {
+          return
+        }
+        const projectIds = feature.properties.projectIds
+        const projects = projectIds
+          .split("|")
+          .map((projectId) => projectsById.get(projectId))
+          .filter((project): project is GridProject => Boolean(project))
+        if (projects.length > 1) {
+          setSelectedProject(null)
+          setSelectedProjectGroup(projects)
+        } else {
+          setSelectedProject(projects[0] ?? null)
+          setSelectedProjectGroup(null)
+        }
+      }
 
       map.on("click", "projects", (event) => {
         const feature = event.features?.[0] as ProjectFeatureCollection["features"][number] | undefined
-        const projectId = feature?.properties.id
-        if (projectId) {
-          setSelectedProject(projectsById.get(projectId) ?? null)
-        }
+        selectProjectFeature(feature)
+      })
+      map.on("click", "project-point-count", (event) => {
+        const feature = event.features?.[0] as ProjectFeatureCollection["features"][number] | undefined
+        selectProjectFeature(feature)
       })
     })
 
@@ -1326,6 +1365,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault()
       setSelectedProject(project)
+      setSelectedProjectGroup(null)
     }
   }
 
@@ -1647,7 +1687,10 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                 {table.getRowModel().rows.map((row) => (
                   <tr
                     key={row.id}
-                    onClick={() => setSelectedProject(row.original)}
+                    onClick={() => {
+                      setSelectedProject(row.original)
+                      setSelectedProjectGroup(null)
+                    }}
                     onKeyDown={(event) => handleProjectRowKeyDown(event, row.original)}
                     role="button"
                     tabIndex={0}
@@ -1706,13 +1749,25 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             <EventTable
               events={filteredEvents}
               projectsById={projectsById}
-              onSelectProject={setSelectedProject}
+              onSelectProject={(project) => {
+                setSelectedProject(project)
+                setSelectedProjectGroup(null)
+              }}
             />
           )}
         </motion.div>
       </section>
 
-      {selectedProject ? (
+      {selectedProjectGroup ? (
+        <ProjectGroupDrawer
+          projects={selectedProjectGroup}
+          onSelectProject={(project) => {
+            setSelectedProject(project)
+            setSelectedProjectGroup(null)
+          }}
+          onClose={() => setSelectedProjectGroup(null)}
+        />
+      ) : selectedProject ? (
         <ProjectDrawer project={selectedProject} onClose={() => setSelectedProject(null)} />
       ) : null}
     </main>
@@ -1812,6 +1867,90 @@ function EventTable({
         </tbody>
       </table>
     </div>
+  )
+}
+
+function ProjectGroupDrawer({
+  projects,
+  onSelectProject,
+  onClose
+}: {
+  projects: GridProject[]
+  onSelectProject: (project: GridProject) => void
+  onClose: () => void
+}) {
+  const totalMw = projects.reduce((sum, project) => sum + (project.mwRequested ?? 0), 0)
+  const first = projects[0]
+
+  return (
+    <motion.aside
+      initial={{ x: 32, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={{ x: 32, opacity: 0 }}
+      transition={{ duration: 0.22, ease: "easeOut" }}
+      className="fixed right-0 top-0 z-20 h-screen w-[460px] border-l border-border bg-card shadow-2xl"
+    >
+      <div className="flex items-start justify-between gap-3 border-b border-border p-5">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center rounded-sm border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+              {first?.iso ?? "ISO"}
+            </span>
+            <span className="font-mono text-xs text-muted-foreground">
+              {projects.length.toLocaleString()} projects
+            </span>
+          </div>
+          <h2 className="mt-2 text-xl font-semibold tracking-tight">Projects at this location</h2>
+          <div className="mt-1.5 flex items-center gap-2 font-mono text-sm tabular-nums text-muted-foreground">
+            <span className="text-foreground">{totalMw.toLocaleString()}</span>
+            <span>MW queued</span>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-sm border border-border p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          aria-label="Close"
+        >
+          <X size={16} />
+        </button>
+      </div>
+      <div className="space-y-2 overflow-y-auto p-5">
+        {projects.map((project) => {
+          const FuelIcon = fuelIconFor(project.fuelType)
+          const fuelTone = fuelTokenClassFor(project.fuelType)
+          return (
+            <button
+              key={project.id}
+              type="button"
+              onClick={() => onSelectProject(project)}
+              className="w-full rounded border border-border bg-background p-3 text-left transition-colors hover:bg-muted/50"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs text-muted-foreground">{project.queueId}</span>
+                    <span className="inline-flex items-center gap-1 text-xs capitalize text-muted-foreground">
+                      <FuelIcon size={12} className={fuelTone} />
+                      {project.fuelType ?? "—"}
+                    </span>
+                  </div>
+                  <p className="mt-1 truncate font-medium">
+                    {project.projectName ?? "Unnamed project"}
+                  </p>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">
+                    {project.currentPhase ?? "Unknown phase"} · {project.currentStatus ?? "Unknown status"}
+                  </p>
+                </div>
+                <span className="shrink-0 font-mono text-sm tabular-nums">
+                  {project.mwRequested?.toLocaleString() ?? "—"} MW
+                </span>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </motion.aside>
   )
 }
 
