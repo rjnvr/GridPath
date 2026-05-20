@@ -1,4 +1,5 @@
 import type {
+  AnalysisHeatmapProject,
   AnalysisData,
   DashboardData,
   FuelMixTrend,
@@ -174,6 +175,14 @@ type FuelMixTrendRow = {
   iso: string
   fuel_type: string | null
   project_count: string | number
+}
+
+type AnalysisHeatmapProjectRow = {
+  id: string
+  iso: string
+  lat: string | number
+  lng: string | number
+  mw_requested: string | number
 }
 
 function numberOrNull(value: string | number | null): number | null {
@@ -593,6 +602,7 @@ export async function getAnalysisData(): Promise<AnalysisData> {
     return {
       generatedAt,
       coverage: [],
+      heatmapProjects: [],
       projectTrends: [],
       changeTrends: [],
       fuelMix: [],
@@ -603,7 +613,14 @@ export async function getAnalysisData(): Promise<AnalysisData> {
   const sql = getSql()
 
   try {
-    const [coverageRows, projectTrendRows, changeTrendRows, fuelMixRows, recentRows] =
+    const [
+      coverageRows,
+      heatmapRows,
+      projectTrendRows,
+      changeTrendRows,
+      fuelMixRows,
+      recentRows
+    ] =
       await Promise.all([
         sql`
           select
@@ -617,6 +634,29 @@ export async function getAnalysisData(): Promise<AnalysisData> {
             and report_date is not null
           group by iso
           order by iso
+        `,
+        sql`
+          select
+            id,
+            iso,
+            lat,
+            lng,
+            mw_requested
+          from projects
+          where iso = ANY(${SUPPORTED_ISO_LIST})
+            and lat is not null
+            and lng is not null
+            and mw_requested is not null
+            and mw_requested > 0
+            and lng between -125 and -66
+            and lat between 24 and 50
+            and not (
+              lower(
+                coalesce(current_status, '') || ' ' || coalesce(current_phase, '')
+              ) ~ '(withdrawn|cancelled|canceled|energized|completed|retired|inactive)'
+            )
+          order by mw_requested desc nulls last
+          limit 15000
         `,
         sql`
           select
@@ -692,6 +732,23 @@ export async function getAnalysisData(): Promise<AnalysisData> {
         reportCount: countValue(row.report_count),
         source: coverageSource(row.iso)
       })),
+      heatmapProjects: (heatmapRows as AnalysisHeatmapProjectRow[])
+        .map((row): AnalysisHeatmapProject | null => {
+          const lat = numberOrNull(row.lat)
+          const lng = numberOrNull(row.lng)
+          const mwRequested = numberOrNull(row.mw_requested)
+          if (lat === null || lng === null || mwRequested === null) {
+            return null
+          }
+          return {
+            id: row.id,
+            iso: row.iso,
+            lat,
+            lng,
+            mwRequested
+          }
+        })
+        .filter((project): project is AnalysisHeatmapProject => project !== null),
       projectTrends: (projectTrendRows as MonthlyProjectTrendRow[]).map(
         (row): MonthlyProjectTrend => ({
           month: toMonthString(row.month),
@@ -721,6 +778,7 @@ export async function getAnalysisData(): Promise<AnalysisData> {
       return {
         generatedAt,
         coverage: [],
+        heatmapProjects: [],
         projectTrends: [],
         changeTrends: [],
         fuelMix: [],

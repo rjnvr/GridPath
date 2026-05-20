@@ -9,6 +9,7 @@ import type {
   RecentChange
 } from "@gridpath/shared"
 
+import { ActiveMwHeatmap } from "@/components/analysis/active-mw-heatmap"
 import { MetricBar } from "@/components/analysis/metric-bar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -32,6 +33,7 @@ export function AnalysisDashboard({ data }: { data: AnalysisData }) {
           ...data.projectTrends.map((row) => row.iso),
           ...data.changeTrends.map((row) => row.iso),
           ...data.fuelMix.map((row) => row.iso),
+          ...data.heatmapProjects.map((row) => row.iso),
           ...data.recentChanges.map((row) => row.iso)
         ])
       ).sort(),
@@ -88,6 +90,8 @@ export function AnalysisDashboard({ data }: { data: AnalysisData }) {
           ))}
         </div>
       </header>
+
+      <ActiveMwHeatmap projects={data.heatmapProjects} />
 
       {selectedIsos.length === 0 ? (
         <p className="rounded-md border border-dashed border-border p-6 text-sm text-muted-foreground">
