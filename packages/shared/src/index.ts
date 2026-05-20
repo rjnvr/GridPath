@@ -1,3 +1,9 @@
+// Single source of truth for which ISOs have data flowing into GridPath.
+// Add a new ISO here once its ingestion is wired up — the dashboard, headroom,
+// analysis, and health pages all read from this list.
+export const SUPPORTED_ISOS = ["ERCOT", "CAISO"] as const
+export type SupportedIso = (typeof SUPPORTED_ISOS)[number]
+
 export type FuelType = "solar" | "wind" | "storage" | "gas" | string
 
 export type ProjectChange = {
