@@ -386,12 +386,12 @@ function tileStyle() {
     version: 8,
     glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
     sources: {
-      voyager: {
+      darkMatter: {
         type: "raster",
         tiles: [
-          "https://a.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png",
-          "https://b.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png",
-          "https://c.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png"
+          "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+          "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+          "https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"
         ],
         tileSize: 256,
         attribution: "© OpenStreetMap contributors © CARTO"
@@ -399,14 +399,21 @@ function tileStyle() {
     },
     layers: [
       {
-        id: "voyager",
-        type: "raster",
-        source: "voyager",
+        id: "background",
+        type: "background",
         paint: {
-          "raster-brightness-min": 0.7,
-          "raster-brightness-max": 0.98,
-          "raster-contrast": -0.12,
-          "raster-saturation": 0.25
+          "background-color": "#151515"
+        }
+      },
+      {
+        id: "dark-matter",
+        type: "raster",
+        source: "darkMatter",
+        paint: {
+          "raster-brightness-min": 0.08,
+          "raster-brightness-max": 0.82,
+          "raster-contrast": 0,
+          "raster-saturation": -0.12
         }
       }
     ]
@@ -985,8 +992,8 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
           "text-ignore-placement": false
         },
         paint: {
-          "text-color": "#243142",
-          "text-halo-color": "rgba(255, 255, 255, 0.92)",
+          "text-color": "#c8d0d8",
+          "text-halo-color": "rgba(8, 8, 8, 0.95)",
           "text-halo-width": 1.4,
           "text-halo-blur": 0,
           "text-opacity": 0.92
@@ -1028,9 +1035,9 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             "#5b9bd5",
             "Sacramento",
             "#a78bfa",
-            "#2563eb"
+            "#8fb6ff"
           ],
-          "text-halo-color": "rgba(255, 255, 255, 0.95)",
+          "text-halo-color": "rgba(8, 8, 8, 0.95)",
           "text-halo-width": 1.3,
           "text-halo-blur": 0,
           "text-opacity": 0.96

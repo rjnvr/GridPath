@@ -34,7 +34,16 @@ function tileStyle(): maplibregl.StyleSpecification | string {
         attribution: "© OpenStreetMap contributors © CARTO"
       }
     },
-    layers: [{ id: "dark-matter", type: "raster", source: "darkMatter" }]
+    layers: [
+      {
+        id: "background",
+        type: "background",
+        paint: {
+          "background-color": "#151515"
+        }
+      },
+      { id: "dark-matter", type: "raster", source: "darkMatter" }
+    ]
   }
 }
 
