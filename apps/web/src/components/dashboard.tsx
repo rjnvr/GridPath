@@ -94,6 +94,8 @@ type ProjectFeatureCollection = GeoJSON.FeatureCollection<
     mwRequested: number | null
     fuelType: string
     fuelKey: string
+    offsetX: number
+    offsetY: number
     currentPhase: string
     currentStatus: string
     filedDate: string | null
@@ -136,6 +138,7 @@ type PanelMode = "projects" | "events"
 type MapMode = "normal" | "fullscreen"
 
 const MAP_DEFAULT_HEIGHT = 620
+const MARKER_SPREAD_RADIUS = 18
 const MAP_VIEW_BOUNDS = {
   all: [
     [-124.8, 25.2],
@@ -499,18 +502,44 @@ function mapBoundsForIso(iso: string): [[number, number], [number, number]] {
 
 function fitMapToIso(map: MapLibreMap, iso: string, duration = 600) {
   map.fitBounds(mapBoundsForIso(iso), {
-    padding: { top: 64, right: 40, bottom: 40, left: 40 },
+    padding: { top: 36, right: 28, bottom: 28, left: 28 },
     duration,
     maxZoom: 5.5
   })
 }
 
 function projectsToGeoJson(projects: GridProject[]): ProjectFeatureCollection {
+  const visibleProjects = projects.filter((project) => project.lat !== null && project.lng !== null)
+  const coordinateCounts = new Map<string, number>()
+
+  for (const project of visibleProjects) {
+    const key = `${(project.lng as number).toFixed(5)},${(project.lat as number).toFixed(5)}`
+    coordinateCounts.set(key, (coordinateCounts.get(key) ?? 0) + 1)
+  }
+
+  const coordinateIndexes = new Map<string, number>()
+
   return {
     type: "FeatureCollection",
-    features: projects
-      .filter((project) => project.lat !== null && project.lng !== null)
-      .map((project) => ({
+    features: visibleProjects.map((project) => {
+      const coordinateKey = `${(project.lng as number).toFixed(5)},${(project.lat as number).toFixed(5)}`
+      const coordinateTotal = coordinateCounts.get(coordinateKey) ?? 1
+      const coordinateIndex = coordinateIndexes.get(coordinateKey) ?? 0
+      coordinateIndexes.set(coordinateKey, coordinateIndex + 1)
+
+      const spread =
+        coordinateTotal > 1
+          ? {
+              offsetX:
+                Math.cos((Math.PI * 2 * coordinateIndex) / coordinateTotal) *
+                MARKER_SPREAD_RADIUS,
+              offsetY:
+                Math.sin((Math.PI * 2 * coordinateIndex) / coordinateTotal) *
+                MARKER_SPREAD_RADIUS
+            }
+          : { offsetX: 0, offsetY: 0 }
+
+      return {
         type: "Feature",
         geometry: {
           type: "Point",
@@ -523,11 +552,14 @@ function projectsToGeoJson(projects: GridProject[]): ProjectFeatureCollection {
           mwRequested: project.mwRequested,
           fuelType: project.fuelType ?? "unknown",
           fuelKey: normalizeFuelKey(project.fuelType),
+          offsetX: spread.offsetX,
+          offsetY: spread.offsetY,
           currentPhase: project.currentPhase ?? "Unknown",
           currentStatus: project.currentStatus ?? "Unknown",
           filedDate: project.filedDate
         }
-      }))
+      }
+    })
   }
 }
 
@@ -965,6 +997,11 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             1000,
             1
           ],
+          "icon-offset": [
+            "array",
+            ["number", ["get", "offsetX"]],
+            ["number", ["get", "offsetY"]]
+          ],
           "icon-allow-overlap": true,
           "icon-ignore-placement": true
         },
@@ -1097,7 +1134,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             className={
               mapMode === "fullscreen"
                 ? "fixed inset-6 z-30 overflow-hidden rounded-md border border-border bg-card shadow-2xl"
-                : "relative w-full max-w-7xl overflow-hidden rounded-md border border-border bg-card shadow-md"
+                : "relative w-full overflow-hidden rounded-md border border-border bg-card shadow-md"
             }
             style={mapMode === "fullscreen" ? undefined : { height: MAP_DEFAULT_HEIGHT }}
           >
