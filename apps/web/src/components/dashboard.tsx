@@ -94,9 +94,6 @@ type ProjectFeatureCollection = GeoJSON.FeatureCollection<
     mwRequested: number | null
     fuelType: string
     fuelKey: string
-    offsetX: number
-    offsetY: number
-    offset: [number, number]
     currentPhase: string
     currentStatus: string
     filedDate: string | null
@@ -139,7 +136,7 @@ type PanelMode = "projects" | "events"
 type MapMode = "normal" | "fullscreen"
 
 const MAP_DEFAULT_HEIGHT = 620
-const MARKER_SPREAD_RADIUS = 18
+const COLOCATED_JITTER_BASE_DEGREES = 0.035
 const MAP_VIEW_BOUNDS = {
   all: [
     [-124.8, 25.2],
@@ -609,40 +606,51 @@ function projectsToGeoJson(projects: GridProject[]): ProjectFeatureCollection {
     }
     return Number.isFinite(project.lat) && Number.isFinite(project.lng)
   })
-  const coordinateCounts = new Map<string, number>()
 
+  const colocatedGroups = new Map<string, GridProject[]>()
   for (const project of visibleProjects) {
-    const key = `${(project.lng as number).toFixed(5)},${(project.lat as number).toFixed(5)}`
-    coordinateCounts.set(key, (coordinateCounts.get(key) ?? 0) + 1)
+    const key = `${(project.lng as number).toFixed(4)},${(project.lat as number).toFixed(4)}`
+    const group = colocatedGroups.get(key)
+    if (group) {
+      group.push(project)
+    } else {
+      colocatedGroups.set(key, [project])
+    }
   }
 
-  const coordinateIndexes = new Map<string, number>()
+  const jitteredCoords = new Map<string, [number, number]>()
+  for (const group of colocatedGroups.values()) {
+    if (group.length === 1) {
+      const only = group[0]
+      jitteredCoords.set(only.id, [only.lng as number, only.lat as number])
+      continue
+    }
+    const sorted = [...group].sort((a, b) => a.id.localeCompare(b.id))
+    const radius = COLOCATED_JITTER_BASE_DEGREES * Math.sqrt(sorted.length)
+    sorted.forEach((project, index) => {
+      const angle = (Math.PI * 2 * index) / sorted.length
+      const lat = project.lat as number
+      const lng = project.lng as number
+      const lngScale = 1 / Math.max(0.1, Math.cos((lat * Math.PI) / 180))
+      jitteredCoords.set(project.id, [
+        lng + Math.cos(angle) * radius * lngScale,
+        lat + Math.sin(angle) * radius
+      ])
+    })
+  }
 
   return {
     type: "FeatureCollection",
     features: visibleProjects.map((project) => {
-      const coordinateKey = `${(project.lng as number).toFixed(5)},${(project.lat as number).toFixed(5)}`
-      const coordinateTotal = coordinateCounts.get(coordinateKey) ?? 1
-      const coordinateIndex = coordinateIndexes.get(coordinateKey) ?? 0
-      coordinateIndexes.set(coordinateKey, coordinateIndex + 1)
-
-      const spread =
-        coordinateTotal > 1
-          ? {
-              offsetX:
-                Math.cos((Math.PI * 2 * coordinateIndex) / coordinateTotal) *
-                MARKER_SPREAD_RADIUS,
-              offsetY:
-                Math.sin((Math.PI * 2 * coordinateIndex) / coordinateTotal) *
-                MARKER_SPREAD_RADIUS
-            }
-          : { offsetX: 0, offsetY: 0 }
-
+      const coords = jitteredCoords.get(project.id) ?? [
+        project.lng as number,
+        project.lat as number
+      ]
       return {
         type: "Feature",
         geometry: {
           type: "Point",
-          coordinates: [project.lng as number, project.lat as number]
+          coordinates: coords
         },
         properties: {
           id: project.id,
@@ -651,9 +659,6 @@ function projectsToGeoJson(projects: GridProject[]): ProjectFeatureCollection {
           mwRequested: project.mwRequested,
           fuelType: project.fuelType ?? "unknown",
           fuelKey: normalizeFuelKey(project.fuelType),
-          offsetX: spread.offsetX,
-          offsetY: spread.offsetY,
-          offset: [spread.offsetX, spread.offsetY],
           currentPhase: project.currentPhase ?? "Unknown",
           currentStatus: project.currentStatus ?? "Unknown",
           filedDate: project.filedDate
@@ -1204,12 +1209,6 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             0.78,
             1000,
             1
-          ],
-          "icon-offset": [
-            "array",
-            "number",
-            2,
-            ["get", "offset"]
           ],
           "icon-allow-overlap": true,
           "icon-ignore-placement": true
