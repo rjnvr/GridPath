@@ -143,9 +143,18 @@ export type FuelMixTrend = {
   projectCount: number
 }
 
+export type AnalysisHeatmapProject = {
+  id: string
+  iso: string
+  lat: number
+  lng: number
+  mwRequested: number
+}
+
 export type AnalysisData = {
   generatedAt: string
   coverage: IsoCoverage[]
+  heatmapProjects: AnalysisHeatmapProject[]
   projectTrends: MonthlyProjectTrend[]
   changeTrends: MonthlyChangeTrend[]
   fuelMix: FuelMixTrend[]
