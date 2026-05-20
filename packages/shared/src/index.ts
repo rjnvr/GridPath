@@ -199,6 +199,27 @@ export type HealthData = {
   eventSeverityCounts: EventSeverityCount[]
 }
 
+export type SubstationDetailData = {
+  substation: Substation
+  radiusMiles: number
+  projectCount: number
+  mwQueued: number
+  mwEnergized: number
+  fuelBreakdown: { fuelType: string; projectCount: number; mwQueued: number; mwEnergized: number }[]
+  nearbyProjects: {
+    id: string
+    iso: string
+    queueId: string
+    projectName: string | null
+    fuelType: string | null
+    mwRequested: number | null
+    currentPhase: string | null
+    currentStatus: string | null
+    distanceMiles: number | null
+  }[]
+  recentEvents: QueueEvent[]
+}
+
 export type HeadroomScore = "high" | "medium" | "low" | "saturated"
 
 export type HeadroomFuelBreakdown = {
