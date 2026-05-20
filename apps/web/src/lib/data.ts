@@ -943,10 +943,18 @@ export async function getHeadroomReport(
   if (!process.env.DATABASE_URL) {
     return null
   }
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng) ||
+    lat < -90 ||
+    lat > 90 ||
+    lng < -180 ||
+    lng > 180
+  ) {
     return null
   }
-  const clampedRadius = Math.max(5, Math.min(150, radiusMiles))
+  const normalizedRadius = Number.isFinite(radiusMiles) ? radiusMiles : 25
+  const clampedRadius = Math.max(5, Math.min(150, normalizedRadius))
   const radiusMeters = clampedRadius * 1609.344
   const sql = getSql()
 
@@ -973,7 +981,7 @@ export async function getHeadroomReport(
             )
         ),
         durations as (
-          select extract(epoch from (coalesce(energized_date, current_date) - filed_date)) / (60 * 60 * 24 * 30.4375) as months
+          select (coalesce(energized_date, current_date) - filed_date)::numeric / 30.4375 as months
           from nearby
           where filed_date is not null
             and withdrawn_date is null
