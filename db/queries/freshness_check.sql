@@ -8,6 +8,7 @@ select
 from projects p
 left join project_snapshots s on s.project_id = p.id
 left join source_reports r on r.id = s.source_report_id
+-- Update this list whenever a new ISO joins SUPPORTED_ISOS in packages/shared.
 where p.iso in ('ERCOT', 'CAISO')
 group by p.iso
 order by p.iso;

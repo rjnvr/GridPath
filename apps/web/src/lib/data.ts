@@ -21,8 +21,13 @@ import type {
   SourceReportHealth,
   Substation
 } from "@gridpath/shared"
+import { SUPPORTED_ISOS } from "@gridpath/shared"
 
 import { getSql } from "@/lib/db"
+
+// Mutable copy so the Neon serverless driver can bind it as a Postgres array
+// parameter (it doesn't accept readonly arrays from `as const`).
+const SUPPORTED_ISO_LIST = [...SUPPORTED_ISOS] as string[]
 
 type ProjectRow = {
   id: string
@@ -331,7 +336,7 @@ async function getQueueEventRows(limit = 2000): Promise<QueueEventRow[]> {
       from queue_events e
       join projects p on p.id = e.project_id
       left join source_reports r on r.id = e.source_report_id
-      where p.iso in ('ERCOT', 'CAISO')
+      where p.iso = ANY(${SUPPORTED_ISO_LIST})
       order by e.event_at desc, e.created_at desc
       limit ${limit}
     `
@@ -461,7 +466,7 @@ export async function getProjectDetailData(projectId: string): Promise<ProjectDe
     select *
     from projects
     where id = ${projectId}
-      and iso in ('ERCOT', 'CAISO')
+      and iso = ANY(${SUPPORTED_ISO_LIST})
     limit 1
   `
   const projectRow = (projectRows as ProjectRow[])[0]
@@ -499,12 +504,12 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   const sql = getSql()
   const [projectRows, changeRows, eventRows, substationRows, freshnessRows] = await Promise.all([
-    sql`select * from projects where iso in ('ERCOT', 'CAISO') order by iso, queue_id limit 10000`,
+    sql`select * from projects where iso = ANY(${SUPPORTED_ISO_LIST}) order by iso, queue_id limit 10000`,
     sql`
       select c.*
       from project_status_changes c
       join projects p on p.id = c.project_id
-      where p.iso in ('ERCOT', 'CAISO')
+      where p.iso = ANY(${SUPPORTED_ISO_LIST})
       order by c.changed_at desc
       limit 2000
     `,
@@ -601,7 +606,7 @@ export async function getAnalysisData(): Promise<AnalysisData> {
             max(report_date) as latest_report_date,
             count(*)::bigint as report_count
           from source_reports
-          where iso in ('ERCOT', 'CAISO')
+          where iso = ANY(${SUPPORTED_ISO_LIST})
             and status = 'success'
             and report_date is not null
           group by iso
@@ -614,7 +619,7 @@ export async function getAnalysisData(): Promise<AnalysisData> {
             count(distinct p.id)::bigint as project_count
           from project_snapshots s
           join projects p on p.id = s.project_id
-          where p.iso in ('ERCOT', 'CAISO')
+          where p.iso = ANY(${SUPPORTED_ISO_LIST})
             and s.snapshot_date >= current_date - interval '12 months'
           group by month, p.iso
           order by month, p.iso
@@ -635,7 +640,7 @@ export async function getAnalysisData(): Promise<AnalysisData> {
             )::bigint as energized_count
           from project_status_changes c
           join projects p on p.id = c.project_id
-          where p.iso in ('ERCOT', 'CAISO')
+          where p.iso = ANY(${SUPPORTED_ISO_LIST})
             and c.changed_at >= current_date - interval '12 months'
           group by month, p.iso
           order by month desc, p.iso
@@ -648,7 +653,7 @@ export async function getAnalysisData(): Promise<AnalysisData> {
             count(distinct p.id)::bigint as project_count
           from project_snapshots s
           join projects p on p.id = s.project_id
-          where p.iso in ('ERCOT', 'CAISO')
+          where p.iso = ANY(${SUPPORTED_ISO_LIST})
             and s.snapshot_date >= current_date - interval '12 months'
           group by month, p.iso, coalesce(p.fuel_type, 'unknown')
           order by month, p.iso, project_count desc
@@ -665,7 +670,7 @@ export async function getAnalysisData(): Promise<AnalysisData> {
             c.new_value
           from project_status_changes c
           join projects p on p.id = c.project_id
-          where p.iso in ('ERCOT', 'CAISO')
+          where p.iso = ANY(${SUPPORTED_ISO_LIST})
           order by c.changed_at desc
           limit 25
         `
@@ -733,14 +738,14 @@ async function getHealthEventRows(): Promise<{
           id, iso, source_url, source_name, published_at, report_date, status,
           error_message, started_at, completed_at
         from source_reports
-        where iso in ('ERCOT', 'CAISO') and status = 'success'
+        where iso = ANY(${SUPPORTED_ISO_LIST}) and status = 'success'
         order by iso, completed_at desc nulls last, created_at desc
       `,
       sql`
         select id, iso, source_url, source_name, published_at, report_date, status,
                error_message, started_at, completed_at
         from source_reports
-        where iso in ('ERCOT', 'CAISO') and status = 'failed'
+        where iso = ANY(${SUPPORTED_ISO_LIST}) and status = 'failed'
         order by completed_at desc nulls last, updated_at desc
         limit 20
       `,
@@ -793,21 +798,21 @@ export async function getHealthData(): Promise<HealthData> {
         coalesce(max(s.captured_at) >= now() - interval '25 hours', false) as snapshot_fresh
       from projects p
       left join project_snapshots s on s.project_id = p.id
-      where p.iso in ('ERCOT', 'CAISO')
+      where p.iso = ANY(${SUPPORTED_ISO_LIST})
       group by p.iso
       order by p.iso
     `,
     sql`
       select iso, coalesce(current_phase, 'Unknown') as label, count(*) as count
       from projects
-      where iso in ('ERCOT', 'CAISO')
+      where iso = ANY(${SUPPORTED_ISO_LIST})
       group by iso, coalesce(current_phase, 'Unknown')
       order by iso, count desc
     `,
     sql`
       select iso, coalesce(fuel_type, 'unknown') as label, count(*) as count
       from projects
-      where iso in ('ERCOT', 'CAISO')
+      where iso = ANY(${SUPPORTED_ISO_LIST})
       group by iso, coalesce(fuel_type, 'unknown')
       order by iso, count desc
     `,
@@ -823,7 +828,7 @@ export async function getHealthData(): Promise<HealthData> {
         c.new_value
       from project_status_changes c
       join projects p on p.id = c.project_id
-      where p.iso in ('ERCOT', 'CAISO')
+      where p.iso = ANY(${SUPPORTED_ISO_LIST})
       order by c.changed_at desc
       limit 50
     `,
@@ -1289,16 +1294,16 @@ export async function getLandingStats(): Promise<LandingStats> {
         (
           select count(*) from project_status_changes c
           join projects p on p.id = c.project_id
-          where p.iso in ('ERCOT', 'CAISO')
+          where p.iso = ANY(${SUPPORTED_ISO_LIST})
             and c.changed_at >= now() - interval '7 days'
         )::bigint as changes_7d
       from projects
-      where iso in ('ERCOT', 'CAISO')
+      where iso = ANY(${SUPPORTED_ISO_LIST})
     `,
     sql`
       select iso, count(*)::bigint as project_count
       from projects
-      where iso in ('ERCOT', 'CAISO')
+      where iso = ANY(${SUPPORTED_ISO_LIST})
       group by iso
       order by iso
     `,
@@ -1309,7 +1314,7 @@ export async function getLandingStats(): Promise<LandingStats> {
         c.changed_at, c.field_name, c.old_value, c.new_value
       from project_status_changes c
       join projects p on p.id = c.project_id
-      where p.iso in ('ERCOT', 'CAISO')
+      where p.iso = ANY(${SUPPORTED_ISO_LIST})
       order by c.changed_at desc
       limit 10
     `
