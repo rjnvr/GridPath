@@ -1,7 +1,7 @@
 "use client"
 
 import type { HeadroomReport, HeadroomScore } from "@gridpath/shared"
-import { Loader2, MapPin, Zap } from "lucide-react"
+import { Check, Copy, Loader2, MapPin, Zap } from "lucide-react"
 import maplibregl, { type Map as MapLibreMap, type Marker } from "maplibre-gl"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
@@ -77,9 +77,10 @@ function formatMonths(value: number | null): string {
 type Props = {
   initialReport: HeadroomReport | null
   initialRadius: number
+  readOnly?: boolean
 }
 
-export function HeadroomExplorer({ initialReport, initialRadius }: Props) {
+export function HeadroomExplorer({ initialReport, initialRadius, readOnly = false }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
@@ -125,12 +126,14 @@ export function HeadroomExplorer({ initialReport, initialRadius }: Props) {
     mapRef.current = map
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right")
 
-    map.on("click", (event) => {
-      const { lng, lat } = event.lngLat
-      setLatInput(lat.toFixed(4))
-      setLngInput(lng.toFixed(4))
-      pushReport(lat, lng, radius)
-    })
+    if (!readOnly) {
+      map.on("click", (event) => {
+        const { lng, lat } = event.lngLat
+        setLatInput(lat.toFixed(4))
+        setLngInput(lng.toFixed(4))
+        pushReport(lat, lng, radius)
+      })
+    }
 
     return () => {
       map.remove()
@@ -202,11 +205,13 @@ export function HeadroomExplorer({ initialReport, initialRadius }: Props) {
     <div className="flex h-[calc(100vh-3.5rem)] w-full overflow-hidden">
       <div className="relative flex-1">
         <div ref={mapContainerRef} className="h-full w-full" />
-        <div className="pointer-events-none absolute left-4 top-4 z-10 max-w-sm rounded-md bg-background/85 px-3 py-2 text-xs text-muted-foreground shadow backdrop-blur">
-          <span className="font-medium text-foreground">Click anywhere</span> to analyze
-          interconnect headroom in that area. Best for siting data centers, large loads,
-          or new generation.
-        </div>
+        {readOnly ? null : (
+          <div className="pointer-events-none absolute left-4 top-4 z-10 max-w-sm rounded-md bg-background/85 px-3 py-2 text-xs text-muted-foreground shadow backdrop-blur">
+            <span className="font-medium text-foreground">Click anywhere</span> to analyze
+            interconnect headroom in that area. Best for siting data centers, large loads,
+            or new generation.
+          </div>
+        )}
         {isPending ? (
           <div className="absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-md bg-background/90 px-3 py-2 text-sm shadow">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -215,59 +220,62 @@ export function HeadroomExplorer({ initialReport, initialRadius }: Props) {
         ) : null}
       </div>
       <aside className="flex w-[420px] shrink-0 flex-col gap-3 overflow-y-auto border-l border-border bg-card/30 p-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <MapPin className="h-4 w-4" /> Pick a location
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleManualSubmit} className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label htmlFor="lat" className="text-xs text-muted-foreground">
-                  Latitude
-                </Label>
-                <Input
-                  id="lat"
-                  value={latInput}
-                  onChange={(event) => setLatInput(event.target.value)}
-                  placeholder="32.7"
-                  inputMode="decimal"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="lng" className="text-xs text-muted-foreground">
-                  Longitude
-                </Label>
-                <Input
-                  id="lng"
-                  value={lngInput}
-                  onChange={(event) => setLngInput(event.target.value)}
-                  placeholder="-96.8"
-                  inputMode="decimal"
-                />
-              </div>
-              <div className="col-span-2 space-y-1">
-                <Label htmlFor="radius" className="text-xs text-muted-foreground">
-                  Radius: {radius} mi
-                </Label>
-                <input
-                  id="radius"
-                  type="range"
-                  min={5}
-                  max={100}
-                  step={5}
-                  value={radius}
-                  onChange={(event) => setRadius(Number(event.target.value))}
-                  className="w-full"
-                />
-              </div>
-              <Button type="submit" className="col-span-2" disabled={isPending}>
-                Analyze
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+        {readOnly ? null : (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <MapPin className="h-4 w-4" /> Pick a location
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleManualSubmit} className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="lat" className="text-xs text-muted-foreground">
+                    Latitude
+                  </Label>
+                  <Input
+                    id="lat"
+                    value={latInput}
+                    onChange={(event) => setLatInput(event.target.value)}
+                    placeholder="32.7"
+                    inputMode="decimal"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="lng" className="text-xs text-muted-foreground">
+                    Longitude
+                  </Label>
+                  <Input
+                    id="lng"
+                    value={lngInput}
+                    onChange={(event) => setLngInput(event.target.value)}
+                    placeholder="-96.8"
+                    inputMode="decimal"
+                  />
+                </div>
+                <div className="col-span-2 space-y-1">
+                  <Label htmlFor="radius" className="text-xs text-muted-foreground">
+                    Radius: {radius} mi
+                  </Label>
+                  <input
+                    id="radius"
+                    type="range"
+                    min={5}
+                    max={100}
+                    step={5}
+                    value={radius}
+                    onChange={(event) => setRadius(Number(event.target.value))}
+                    className="w-full"
+                  />
+                </div>
+                <Button type="submit" className="col-span-2" disabled={isPending}>
+                  Analyze
+                </Button>
+                {initialReport ? <ShareLinkButton report={initialReport} /> : null}
+              </form>
+            </CardContent>
+          </Card>
+        )}
 
         {initialReport ? (
           <ReportPanel report={initialReport} />
@@ -412,6 +420,47 @@ function EmptyState() {
         </p>
       </CardContent>
     </Card>
+  )
+}
+
+function ShareLinkButton({ report }: { report: HeadroomReport }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = useCallback(async () => {
+    if (typeof window === "undefined") return
+    const params = new URLSearchParams({
+      lat: report.center.lat.toFixed(5),
+      lng: report.center.lng.toFixed(5),
+      radius: String(report.radiusMiles)
+    })
+    const url = `${window.location.origin}/share/headroom?${params.toString()}`
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard API can be unavailable on non-HTTPS or older browsers; fall back to prompt
+      window.prompt("Copy this share link:", url)
+    }
+  }, [report])
+
+  return (
+    <Button
+      type="button"
+      variant="secondary"
+      className="col-span-2"
+      onClick={handleCopy}
+    >
+      {copied ? (
+        <>
+          <Check className="mr-1.5 h-3.5 w-3.5" /> Copied!
+        </>
+      ) : (
+        <>
+          <Copy className="mr-1.5 h-3.5 w-3.5" /> Copy share link
+        </>
+      )}
+    </Button>
   )
 }
 
