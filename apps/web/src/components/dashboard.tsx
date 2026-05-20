@@ -1027,13 +1027,67 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
 
       map.addSource("projects", {
         type: "geojson",
-        data: projectsToGeoJson(filteredProjectsRef.current)
+        data: projectsToGeoJson(filteredProjectsRef.current),
+        cluster: true,
+        clusterRadius: 50,
+        clusterMaxZoom: 8
       })
       ensureFuelMarkerIcons(map)
+      map.addLayer({
+        id: "project-clusters",
+        type: "circle",
+        source: "projects",
+        filter: ["has", "point_count"],
+        paint: {
+          "circle-color": [
+            "step",
+            ["get", "point_count"],
+            "rgba(245, 185, 66, 0.88)",
+            10,
+            "rgba(245, 158, 11, 0.9)",
+            50,
+            "rgba(234, 88, 12, 0.92)",
+            200,
+            "rgba(220, 38, 38, 0.94)"
+          ],
+          "circle-radius": [
+            "step",
+            ["get", "point_count"],
+            14,
+            10,
+            18,
+            50,
+            24,
+            200,
+            30
+          ],
+          "circle-stroke-width": 1.5,
+          "circle-stroke-color": "rgba(10, 11, 13, 0.85)"
+        }
+      })
+      map.addLayer({
+        id: "project-cluster-count",
+        type: "symbol",
+        source: "projects",
+        filter: ["has", "point_count"],
+        layout: {
+          "text-field": ["get", "point_count_abbreviated"],
+          "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+          "text-size": 12,
+          "text-allow-overlap": true,
+          "text-ignore-placement": true
+        },
+        paint: {
+          "text-color": "#0a0b0d",
+          "text-halo-color": "rgba(255, 255, 255, 0.35)",
+          "text-halo-width": 0.6
+        }
+      })
       map.addLayer({
         id: "projects",
         type: "symbol",
         source: "projects",
+        filter: ["!", ["has", "point_count"]],
         layout: {
           "icon-image": [
             "match",
@@ -1073,6 +1127,28 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         paint: {
           "icon-opacity": 0.96
         }
+      })
+
+      map.on("mouseenter", "project-clusters", () => {
+        map.getCanvas().style.cursor = "pointer"
+      })
+      map.on("mouseleave", "project-clusters", () => {
+        map.getCanvas().style.cursor = ""
+      })
+      map.on("click", "project-clusters", (event) => {
+        const feature = event.features?.[0]
+        const clusterId = feature?.properties?.cluster_id
+        if (clusterId === undefined || clusterId === null) {
+          return
+        }
+        const source = map.getSource("projects") as GeoJSONSource
+        source.getClusterExpansionZoom(clusterId).then((zoom) => {
+          const coordinates = (feature?.geometry as GeoJSON.Point).coordinates as [number, number]
+          map.easeTo({
+            center: coordinates,
+            zoom: Math.min(zoom + 0.25, 12)
+          })
+        })
       })
 
       map.on("mouseenter", "projects", (event) => {
