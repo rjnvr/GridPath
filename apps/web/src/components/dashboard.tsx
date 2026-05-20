@@ -136,6 +136,20 @@ type PanelMode = "projects" | "events"
 type MapMode = "normal" | "fullscreen"
 
 const MAP_DEFAULT_HEIGHT = 620
+const MAP_VIEW_BOUNDS = {
+  all: [
+    [-124.8, 25.2],
+    [-93.2, 42.2]
+  ],
+  ERCOT: [
+    [-107.0, 25.5],
+    [-93.2, 36.8]
+  ],
+  CAISO: [
+    [-124.8, 32.0],
+    [-113.8, 42.2]
+  ]
+} satisfies Record<string, [[number, number], [number, number]]>
 
 const MAP_LABELS: MapLabelFeatureCollection = {
   type: "FeatureCollection",
@@ -423,19 +437,17 @@ function fuelMarkerImage(fuel: keyof typeof fuelColors): ImageData {
   const bgRadius = 13
   const color = fuelColors[fuel]
 
-  ctx.shadowColor = "rgba(0, 0, 0, 0.55)"
+  ctx.shadowColor = "rgba(0, 0, 0, 0.75)"
   ctx.shadowBlur = 4
   ctx.shadowOffsetY = 1
-  ctx.fillStyle = "#0e0f10"
+  ctx.lineWidth = 1.25
+  ctx.strokeStyle = color
   ctx.beginPath()
   ctx.arc(cx, cy, bgRadius, 0, Math.PI * 2)
-  ctx.fill()
+  ctx.stroke()
 
   ctx.shadowBlur = 0
   ctx.shadowOffsetY = 0
-  ctx.lineWidth = 1.25
-  ctx.strokeStyle = color
-  ctx.stroke()
 
   const glyph = FUEL_GLYPHS[fuel]
   const scale = 0.85
@@ -475,6 +487,21 @@ function ensureFuelMarkerIcons(map: MapLibreMap) {
     if (!map.hasImage(id)) {
       map.addImage(id, fuelMarkerImage(fuel), { pixelRatio: 2 })
     }
+  })
+}
+
+function mapBoundsForIso(iso: string): [[number, number], [number, number]] {
+  if (iso === "ERCOT" || iso === "CAISO") {
+    return MAP_VIEW_BOUNDS[iso]
+  }
+  return MAP_VIEW_BOUNDS.all
+}
+
+function fitMapToIso(map: MapLibreMap, iso: string, duration = 600) {
+  map.fitBounds(mapBoundsForIso(iso), {
+    padding: { top: 64, right: 40, bottom: 40, left: 40 },
+    duration,
+    maxZoom: 5.5
   })
 }
 
@@ -663,6 +690,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const popupRef = useRef<maplibregl.Popup | null>(null)
+  const initialMapIsoRef = useRef(filters.iso)
   const projectsById = useMemo(
     () => new Map(initialData.projects.map((project) => [project.id, project])),
     [initialData.projects]
@@ -804,13 +832,15 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     mapRef.current = new maplibregl.Map({
       container: mapContainerRef.current,
       style: tileStyle(),
-      center: [-99.35, 31.05],
-      zoom: 5.25
+      center: [-109.5, 34.4],
+      zoom: 3.6
     })
     const map = mapRef.current
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right")
 
     map.on("load", () => {
+      fitMapToIso(map, initialMapIsoRef.current, 0)
+
       map.addSource("map-labels", {
         type: "geojson",
         data: MAP_LABELS
@@ -984,13 +1014,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     if (!map) {
       return
     }
-    if (filters.iso === "ERCOT") {
-      map.easeTo({ center: [-99.35, 31.05], zoom: 5.25, duration: 600 })
-    } else if (filters.iso === "CAISO") {
-      map.easeTo({ center: [-119.5, 36.8], zoom: 5.2, duration: 600 })
-    } else {
-      map.easeTo({ center: [-109.5, 34.4], zoom: 4.1, duration: 600 })
-    }
+    fitMapToIso(map, filters.iso)
   }, [filters.iso])
 
   useEffect(() => {
