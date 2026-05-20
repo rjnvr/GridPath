@@ -36,6 +36,14 @@ jobs:
         # PJM XLSX schema can drift; let one bad day not block ERCOT/CAISO.
         continue-on-error: true
         run: python -m gridpath_ingestion.pjm
+      - name: Run MISO ingestion
+        env:
+          DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MISO_QUEUE_URL: ${{ secrets.MISO_QUEUE_URL }}
+        # MISO file path rotates each cycle; allow drift until validated.
+        continue-on-error: true
+        run: python -m gridpath_ingestion.miso
       - name: Verify ingestion freshness
         env:
           DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
