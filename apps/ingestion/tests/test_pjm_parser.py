@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from gridpath_ingestion.pjm import assert_expected_columns, parse_workbook
+from gridpath_ingestion.pjm import assert_expected_columns, parse_workbook, parse_xml_report
 
 
 def test_parser_normalizes_required_fields(tmp_path: Path) -> None:
@@ -107,6 +107,39 @@ def test_parser_falls_back_to_first_sheet_when_unnamed(tmp_path: Path) -> None:
     projects = parse_workbook(workbook)
     assert len(projects) == 1
     assert projects[0].queue_id == "Z1-001"
+
+
+def test_xml_parser_reads_current_public_export_shape(tmp_path: Path) -> None:
+    report = tmp_path / "pjm.xml"
+    report.write_text(
+        """<?xml version="1.0" encoding="UTF-8"?>
+        <Projects>
+          <Project>
+            <ProjectNumber>AE1-070</ProjectNumber>
+            <Name>Elwood 345 kV</Name>
+            <State>IL</State>
+            <County>Will</County>
+            <Status>Active</Status>
+            <TransmissionOwner>ComEd</TransmissionOwner>
+            <MaximumFacilityOutput>1610.0</MaximumFacilityOutput>
+            <MWCapacity>135.0</MWCapacity>
+            <ProjectType>Generation Interconnection</ProjectType>
+            <Fuel>Natural Gas</Fuel>
+            <SubmittedDate>7/31/2018</SubmittedDate>
+          </Project>
+        </Projects>
+        """
+    )
+
+    projects = parse_xml_report(report)
+
+    assert len(projects) == 1
+    assert projects[0].iso == "PJM"
+    assert projects[0].queue_id == "AE1-070"
+    assert projects[0].fuel_type == "gas"
+    assert projects[0].current_phase == "Active"
+    assert projects[0].state == "IL"
+    assert projects[0].mw_requested is not None
 
 
 def test_schema_drift_fails_loudly() -> None:

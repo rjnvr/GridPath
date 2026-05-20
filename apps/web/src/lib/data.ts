@@ -185,6 +185,26 @@ type AnalysisHeatmapProjectRow = {
   mw_requested: string | number
 }
 
+function mapHeatmapProjectRows(rows: AnalysisHeatmapProjectRow[]): AnalysisHeatmapProject[] {
+  return rows
+    .map((row): AnalysisHeatmapProject | null => {
+      const lat = numberOrNull(row.lat)
+      const lng = numberOrNull(row.lng)
+      const mwRequested = numberOrNull(row.mw_requested)
+      if (lat === null || lng === null || mwRequested === null) {
+        return null
+      }
+      return {
+        id: row.id,
+        iso: row.iso,
+        lat,
+        lng,
+        mwRequested
+      }
+    })
+    .filter((project): project is AnalysisHeatmapProject => project !== null)
+}
+
 function numberOrNull(value: string | number | null): number | null {
   if (value === null) {
     return null
@@ -732,23 +752,7 @@ export async function getAnalysisData(): Promise<AnalysisData> {
         reportCount: countValue(row.report_count),
         source: coverageSource(row.iso)
       })),
-      heatmapProjects: (heatmapRows as AnalysisHeatmapProjectRow[])
-        .map((row): AnalysisHeatmapProject | null => {
-          const lat = numberOrNull(row.lat)
-          const lng = numberOrNull(row.lng)
-          const mwRequested = numberOrNull(row.mw_requested)
-          if (lat === null || lng === null || mwRequested === null) {
-            return null
-          }
-          return {
-            id: row.id,
-            iso: row.iso,
-            lat,
-            lng,
-            mwRequested
-          }
-        })
-        .filter((project): project is AnalysisHeatmapProject => project !== null),
+      heatmapProjects: mapHeatmapProjectRows(heatmapRows as AnalysisHeatmapProjectRow[]),
       projectTrends: (projectTrendRows as MonthlyProjectTrendRow[]).map(
         (row): MonthlyProjectTrend => ({
           month: toMonthString(row.month),
@@ -1179,6 +1183,44 @@ export async function getHeadroomReport(
     }
   } catch (error) {
     if (isUndefinedRelationError(error)) return null
+    throw error
+  }
+}
+
+export async function getHeadroomHeatmapProjects(): Promise<AnalysisHeatmapProject[]> {
+  if (!process.env.DATABASE_URL) {
+    return []
+  }
+
+  const sql = getSql()
+
+  try {
+    const rows = await sql`
+      select
+        id,
+        iso,
+        lat,
+        lng,
+        mw_requested
+      from projects
+      where iso = ANY(${SUPPORTED_ISO_LIST})
+        and lat is not null
+        and lng is not null
+        and mw_requested is not null
+        and mw_requested > 0
+        and lng between -125 and -66
+        and lat between 24 and 50
+        and not (
+          lower(
+            coalesce(current_status, '') || ' ' || coalesce(current_phase, '')
+          ) ~ '(withdrawn|cancelled|canceled|retired|inactive)'
+        )
+      order by mw_requested desc nulls last
+      limit 25000
+    `
+    return mapHeatmapProjectRows(rows as AnalysisHeatmapProjectRow[])
+  } catch (error) {
+    if (isUndefinedRelationError(error)) return []
     throw error
   }
 }

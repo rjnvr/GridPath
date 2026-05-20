@@ -1,8 +1,12 @@
 "use client"
 
-import type { HeadroomReport, HeadroomScore } from "@gridpath/shared"
+import type { AnalysisHeatmapProject, HeadroomReport, HeadroomScore } from "@gridpath/shared"
 import { Check, Copy, Loader2, MapPin, Zap } from "lucide-react"
-import maplibregl, { type Map as MapLibreMap, type Marker } from "maplibre-gl"
+import maplibregl, {
+  type GeoJSONSource,
+  type Map as MapLibreMap,
+  type Marker
+} from "maplibre-gl"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -14,6 +18,20 @@ import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
 
 import "maplibre-gl/dist/maplibre-gl.css"
+
+const USA_BOUNDS: [[number, number], [number, number]] = [
+  [-125, 24],
+  [-66, 50]
+]
+
+type HeatmapFeatureCollection = GeoJSON.FeatureCollection<
+  GeoJSON.Point,
+  {
+    id: string
+    iso: string
+    mwRequested: number
+  }
+>
 
 function tileStyle(): maplibregl.StyleSpecification | string {
   const key = process.env.NEXT_PUBLIC_MAPTILER_KEY
@@ -83,13 +101,37 @@ function formatMonths(value: number | null): string {
   return `${value.toFixed(1)} mo`
 }
 
+function projectsToGeoJson(projects: AnalysisHeatmapProject[]): HeatmapFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: projects.map((project) => ({
+      type: "Feature",
+      geometry: {
+        type: "Point",
+        coordinates: [project.lng, project.lat]
+      },
+      properties: {
+        id: project.id,
+        iso: project.iso,
+        mwRequested: project.mwRequested
+      }
+    }))
+  }
+}
+
 type Props = {
   initialReport: HeadroomReport | null
   initialRadius: number
+  heatmapProjects: AnalysisHeatmapProject[]
   readOnly?: boolean
 }
 
-export function HeadroomExplorer({ initialReport, initialRadius, readOnly = false }: Props) {
+export function HeadroomExplorer({
+  initialReport,
+  initialRadius,
+  heatmapProjects,
+  readOnly = false
+}: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
@@ -103,6 +145,7 @@ export function HeadroomExplorer({ initialReport, initialRadius, readOnly = fals
   const [isPending, setIsPending] = useState(false)
 
   const center = useMemo(() => initialReport?.center ?? null, [initialReport])
+  const heatmapGeoJson = useMemo(() => projectsToGeoJson(heatmapProjects), [heatmapProjects])
 
   const pushReport = useCallback(
     (lat: number, lng: number, radiusMi: number) => {
@@ -130,7 +173,10 @@ export function HeadroomExplorer({ initialReport, initialRadius, readOnly = fals
       container: mapContainerRef.current,
       style: tileStyle(),
       center: center ? [center.lng, center.lat] : [-99.35, 31.05],
-      zoom: center ? 8 : 4.5
+      zoom: center ? 8 : 4.5,
+      minZoom: 2.7,
+      maxZoom: 11,
+      maxBounds: USA_BOUNDS
     })
     mapRef.current = map
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right")
@@ -151,6 +197,82 @@ export function HeadroomExplorer({ initialReport, initialRadius, readOnly = fals
     // We intentionally initialize once; the pin/radius effects update state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Render the all-USA development density layer underneath the selected radius.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    const apply = () => {
+      const existingSource = map.getSource("headroom-development-heatmap") as
+        | GeoJSONSource
+        | undefined
+
+      if (existingSource) {
+        existingSource.setData(heatmapGeoJson)
+        return
+      }
+
+      map.addSource("headroom-development-heatmap", {
+        type: "geojson",
+        data: heatmapGeoJson
+      })
+
+      map.addLayer({
+        id: "headroom-development-heatmap",
+        type: "heatmap",
+        source: "headroom-development-heatmap",
+        maxzoom: 10,
+        paint: {
+          "heatmap-weight": [
+            "interpolate",
+            ["linear"],
+            ["min", ["coalesce", ["get", "mwRequested"], 0], 3000],
+            0,
+            0,
+            50,
+            0.06,
+            250,
+            0.2,
+            750,
+            0.45,
+            1500,
+            0.72,
+            3000,
+            1
+          ],
+          "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 3, 0.7, 6, 1.2, 9, 1.8],
+          "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 3, 9, 5, 15, 8, 26, 10, 42],
+          "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 3, 0.68, 8, 0.84, 10, 0.74],
+          "heatmap-color": [
+            "interpolate",
+            ["linear"],
+            ["heatmap-density"],
+            0,
+            "rgba(3, 7, 18, 0)",
+            0.1,
+            "rgba(30, 64, 175, 0.48)",
+            0.24,
+            "rgba(14, 165, 233, 0.68)",
+            0.44,
+            "rgba(250, 204, 21, 0.76)",
+            0.64,
+            "rgba(249, 115, 22, 0.84)",
+            0.86,
+            "rgba(220, 38, 38, 0.94)",
+            1,
+            "rgba(153, 27, 27, 0.98)"
+          ]
+        }
+      })
+    }
+
+    if (map.isStyleLoaded()) {
+      apply()
+    } else {
+      map.once("load", apply)
+    }
+  }, [heatmapGeoJson])
 
   // Render the pin and radius circle when center/radius changes
   useEffect(() => {
