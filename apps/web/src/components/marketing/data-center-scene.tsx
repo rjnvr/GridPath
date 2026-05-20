@@ -24,9 +24,9 @@ export function DataCenterScene() {
     const scene = new THREE.Scene()
     scene.fog = new THREE.FogExp2(0x0f0f0f, 0.018)
 
-    const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 100)
-    camera.position.set(0, 4.8, 11)
-    camera.lookAt(0, 0.7, 0)
+    const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 100)
+    camera.position.set(0, 4.6, 12.5)
+    camera.lookAt(0, 0.15, 0)
 
     const renderer = new THREE.WebGLRenderer({
       alpha: true,
@@ -56,7 +56,7 @@ export function DataCenterScene() {
         roughness: 0.72
       })
     )
-    pad.position.y = -2.25
+    pad.position.y = -1.85
     pad.scale.z = 0.58
     scene.add(pad)
 
@@ -65,7 +65,7 @@ export function DataCenterScene() {
       new THREE.MeshBasicMaterial({ color: 0x3ab87a, transparent: true, opacity: 0.55 })
     )
     ring.rotation.x = Math.PI / 2
-    ring.position.y = -2.12
+    ring.position.y = -1.72
     ring.scale.y = 0.58
     scene.add(ring)
 
@@ -107,14 +107,14 @@ export function DataCenterScene() {
         const box = new THREE.Box3().setFromObject(model)
         const size = box.getSize(new THREE.Vector3())
         const center = box.getCenter(new THREE.Vector3())
-        const scale = 4.8 / Math.max(size.x, size.y, size.z)
+        const scale = 3.35 / Math.max(size.x, size.y, size.z)
 
         model.position.sub(center)
         campusGroup = new THREE.Group()
         campusGroup.add(model)
         campusGroup.scale.setScalar(scale)
         campusGroup.rotation.set(-0.35, -0.62, 0)
-        campusGroup.position.set(0.45, 0.12, 0)
+        campusGroup.position.set(0.2, -0.3, 0)
 
         scene.add(campusGroup)
         setLoadError(false)
@@ -143,7 +143,7 @@ export function DataCenterScene() {
   }, [])
 
   return (
-    <div className="absolute inset-x-0 bottom-0 top-20">
+    <div className="absolute inset-0">
       <div ref={mountRef} className="h-full w-full" aria-hidden />
       <div
         aria-hidden
