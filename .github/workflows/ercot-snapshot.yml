@@ -28,6 +28,14 @@ jobs:
           DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python -m gridpath_ingestion.caiso
+      - name: Run PJM ingestion
+        env:
+          DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PJM_QUEUE_URL: ${{ secrets.PJM_QUEUE_URL }}
+        # PJM XLSX schema can drift; let one bad day not block ERCOT/CAISO.
+        continue-on-error: true
+        run: python -m gridpath_ingestion.pjm
       - name: Verify ingestion freshness
         env:
           DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}

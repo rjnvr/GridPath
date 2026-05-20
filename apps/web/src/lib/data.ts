@@ -574,6 +574,9 @@ function coverageLabel(iso: string): string {
   if (iso === "CAISO") {
     return "Official CAISO snapshots from first capture date"
   }
+  if (iso === "PJM") {
+    return "Official PJM New Services Queue snapshots"
+  }
   return "Official queue snapshots"
 }
 
