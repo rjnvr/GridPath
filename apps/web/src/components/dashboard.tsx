@@ -452,6 +452,18 @@ function fuelMarkerImage(fuel: keyof typeof fuelColors): ImageData {
   ctx.shadowBlur = 0
   ctx.shadowOffsetY = 0
 
+  drawFuelMarkerGlyph(ctx, fuel, color, cx, cy)
+
+  return ctx.getImageData(0, 0, canvas.width, canvas.height)
+}
+
+function drawFuelMarkerGlyph(
+  ctx: CanvasRenderingContext2D,
+  fuel: keyof typeof fuelColors,
+  color: string,
+  cx: number,
+  cy: number
+) {
   const glyph = FUEL_GLYPHS[fuel]
   const scale = 0.85
   ctx.save()
@@ -462,35 +474,85 @@ function fuelMarkerImage(fuel: keyof typeof fuelColors): ImageData {
   ctx.lineCap = "round"
   ctx.lineJoin = "round"
 
-  if (glyph.circles) {
-    for (const c of glyph.circles) {
-      ctx.beginPath()
-      ctx.arc(c.cx, c.cy, c.r, 0, Math.PI * 2)
-      ctx.stroke()
+  try {
+    if (glyph.circles) {
+      for (const c of glyph.circles) {
+        ctx.beginPath()
+        ctx.arc(c.cx, c.cy, c.r, 0, Math.PI * 2)
+        ctx.stroke()
+      }
     }
-  }
-  if (glyph.rects) {
-    for (const r of glyph.rects) {
-      ctx.beginPath()
-      ctx.roundRect(r.x, r.y, r.w, r.h, r.r)
-      ctx.stroke()
+    if (glyph.rects) {
+      for (const r of glyph.rects) {
+        ctx.beginPath()
+        ctx.roundRect(r.x, r.y, r.w, r.h, r.r)
+        ctx.stroke()
+      }
     }
+    for (const pathString of glyph.paths) {
+      ctx.stroke(new Path2D(pathString))
+    }
+  } catch {
+    ctx.restore()
+    drawFallbackFuelMarkerGlyph(ctx, fuel, color, cx, cy)
+    return
   }
-  for (const pathString of glyph.paths) {
-    ctx.stroke(new Path2D(pathString))
-  }
-  ctx.restore()
 
-  return ctx.getImageData(0, 0, canvas.width, canvas.height)
+  ctx.restore()
+}
+
+function drawFallbackFuelMarkerGlyph(
+  ctx: CanvasRenderingContext2D,
+  fuel: keyof typeof fuelColors,
+  color: string,
+  cx: number,
+  cy: number
+) {
+  const labels: Record<keyof typeof fuelColors, string> = {
+    solar: "S",
+    wind: "W",
+    storage: "B",
+    gas: "G",
+    hydro: "H",
+    other: "+"
+  }
+
+  ctx.save()
+  ctx.fillStyle = color
+  ctx.font = "700 12px system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
+  ctx.textAlign = "center"
+  ctx.textBaseline = "middle"
+  ctx.fillText(labels[fuel], cx, cy + 0.5)
+  ctx.restore()
 }
 
 function ensureFuelMarkerIcons(map: MapLibreMap) {
   ;(Object.keys(fuelColors) as Array<keyof typeof fuelColors>).forEach((fuel) => {
     const id = `marker-${fuel}`
     if (!map.hasImage(id)) {
-      map.addImage(id, fuelMarkerImage(fuel), { pixelRatio: 2 })
+      try {
+        map.addImage(id, fuelMarkerImage(fuel), { pixelRatio: 2 })
+      } catch {
+        map.addImage(id, fallbackFuelMarkerImage(fuel), { pixelRatio: 2 })
+      }
     }
   })
+}
+
+function fallbackFuelMarkerImage(fuel: keyof typeof fuelColors): ImageData {
+  const canvas = document.createElement("canvas")
+  const pixelRatio = 2
+  const size = 30
+  canvas.width = size * pixelRatio
+  canvas.height = size * pixelRatio
+  const ctx = canvas.getContext("2d")
+  if (!ctx) {
+    throw new Error("Could not create fallback fuel marker canvas")
+  }
+
+  ctx.scale(pixelRatio, pixelRatio)
+  drawFallbackFuelMarkerGlyph(ctx, fuel, fuelColors[fuel], size / 2, size / 2)
+  return ctx.getImageData(0, 0, canvas.width, canvas.height)
 }
 
 function mapBoundsForIso(iso: string): [[number, number], [number, number]] {
