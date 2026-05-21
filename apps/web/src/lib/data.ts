@@ -609,6 +609,9 @@ function coverageLabel(iso: string): string {
   if (iso === "MISO") {
     return "Official MISO Generator Interconnection Queue snapshots"
   }
+  if (iso === "SPP") {
+    return "Official SPP Generator Interconnection Queue snapshots"
+  }
   return "Official queue snapshots"
 }
 
