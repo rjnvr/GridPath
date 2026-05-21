@@ -1,9 +1,10 @@
 """SPP Generator Interconnection Queue ingestion.
 
-SPP publishes their Generator Interconnection Queue as an XLSX from
-https://opsportal.spp.org (the link is bounced through a portal so the
-default URL points at SPP's public queue download endpoint). Override
-via `SPP_QUEUE_URL` if the path rotates.
+SPP publishes the active generator interconnection queue as an XLSX from
+https://www.spp.org/engineering/generator-interconnection/. The default URL
+points at the consolidated workbook; override via `SPP_QUEUE_URL` if SPP
+rotates the file path. Column layout is alias-based so schema drift surfaces
+as a loud error rather than silent data loss.
 """
 
 from __future__ import annotations
@@ -31,8 +32,9 @@ DEFAULT_SPP_QUEUE_URL = (
 
 PROJECT_SHEETS = {
     "Active",
-    "Generation Interconnection",
+    "Active Queue",
     "GI Queue",
+    "Generator Interconnection Queue",
     "Queue",
 }
 
@@ -41,45 +43,49 @@ EXPECTED_COLUMNS = {
     "State",
 }
 
-QUEUE_ID_COLUMNS = ("Request Number", "Queue Number", "GEN", "GI Number")
+QUEUE_ID_COLUMNS = ("Request Number", "GI Number", "Generation Interconnection Number", "Queue Number", "Queue #")
 
 COLUMN_ALIASES = {
     "Request Number": "queue_id",
-    "Queue Number": "queue_id",
-    "GEN": "queue_id",
     "GI Number": "queue_id",
-    "Customer Name": "project_name",
+    "Generation Interconnection Number": "queue_id",
+    "Queue Number": "queue_id",
+    "Queue #": "queue_id",
     "Project Name": "project_name",
+    "Facility Name": "project_name",
+    "Name": "project_name",
     "Generation Type": "fuel_type",
     "Generator Type": "fuel_type",
-    "Fuel": "fuel_type",
     "Fuel Type": "fuel_type",
+    "Fuel": "fuel_type",
+    "Resource Type": "fuel_type",
     "Type": "fuel_type",
     "MW": "mw_requested",
-    "Capacity MW": "mw_requested",
     "Capacity (MW)": "mw_requested",
+    "Nameplate MW": "mw_requested",
+    "Nameplate Capacity (MW)": "mw_requested",
     "Net MW": "mw_requested",
+    "Summer MW": "mw_requested",
     "County": "county",
     "State": "state",
     "Status": "current_status",
     "Project Status": "current_status",
-    "Date of IR": "filed_date",
-    "Date of IR (Interconnection Request)": "filed_date",
-    "Request Date": "filed_date",
-    "Submission Date": "filed_date",
+    "Current Status": "current_status",
+    "Queue Date": "filed_date",
+    "Date Received": "filed_date",
     "Application Date": "filed_date",
-    "GIA Date": "ia_signed_date",
-    "GIA Executed": "ia_signed_date",
-    "GIA Executed Date": "ia_signed_date",
+    "Request Receive Date": "filed_date",
+    "IA Executed Date": "ia_signed_date",
     "IA Executed": "ia_signed_date",
+    "GIA Executed": "ia_signed_date",
+    "In Service Date": "energized_date",
     "Commercial Operation Date": "energized_date",
     "Commercial Operation": "energized_date",
-    "In Service Date": "energized_date",
+    "Actual COD": "energized_date",
     "Withdrawn Date": "withdrawn_date",
-    "Withdraw Date": "withdrawn_date",
     "Withdrawal Date": "withdrawn_date",
+    "Withdraw Date": "withdrawn_date",
     "Transmission Owner": "owner_company",
-    "TO": "owner_company",
     "Interconnection Customer": "owner_company",
     "Customer": "owner_company",
     "Developer": "owner_company",
@@ -89,6 +95,7 @@ FUEL_MAP = {
     "battery": "storage",
     "bess": "storage",
     "storage": "storage",
+    "ess": "storage",
     "natural gas": "gas",
     "gas": "gas",
     "solar": "solar",
@@ -101,32 +108,30 @@ FUEL_MAP = {
     "coal": "coal",
     "oil": "oil",
     "diesel": "oil",
-    "geothermal": "geothermal",
     "methane": "gas",
     "hybrid": "hybrid",
 }
 
-# SPP uses a DISIS (Definitive Interconnection System Impact Study) cluster
-# process. Map their common status strings into GridPath's normalized phases.
+# SPP study taxonomy: DISIS (Definitive Interconnection System Impact Study) →
+# AFS (Aggregate Facilities Study) → IA. Map the most common status strings.
 PHASE_MAP = {
     "withdrawn": "Withdrawn",
     "suspended": "Withdrawn",
     "terminated": "Withdrawn",
     "in service": "Energized",
+    "in-service": "Energized",
     "commercial operation": "Energized",
-    "complete": "Energized",
-    "gia executed": "IA Executed",
-    "gia signed": "IA Executed",
+    "completed": "Energized",
     "ia executed": "IA Executed",
+    "gia executed": "IA Executed",
     "executed": "IA Executed",
     "facilities study": "Facilities",
-    "fac study": "Facilities",
-    "definitive": "System Impact",
+    "afs": "Facilities",
+    "aggregate facilities": "Facilities",
     "disis": "System Impact",
     "system impact": "System Impact",
+    "definitive interconnection": "System Impact",
     "feasibility": "Feasibility",
-    "fs": "Feasibility",
-    "preliminary": "Feasibility",
     "active": "Active",
 }
 
@@ -143,10 +148,17 @@ def assert_expected_columns(columns: list[str]) -> None:
         missing.append(" / ".join(QUEUE_ID_COLUMNS))
     has_capacity = any(
         candidate in normalized
-        for candidate in ("MW", "Capacity MW", "Capacity (MW)", "Net MW")
+        for candidate in (
+            "MW",
+            "Capacity (MW)",
+            "Nameplate MW",
+            "Nameplate Capacity (MW)",
+            "Net MW",
+            "Summer MW",
+        )
     )
     if not has_capacity:
-        missing.append("MW / Capacity (MW) / Net MW")
+        missing.append("MW / Nameplate MW / Capacity (MW)")
     if missing:
         raise ValueError(f"SPP schema drift detected. Missing expected columns: {missing}")
 
@@ -245,9 +257,28 @@ def row_to_project(row: dict[str, Any], source_url: str | None = None) -> QueueP
     )
 
 
-def parse_workbook(path: Path, source_url: str | None = None) -> list[QueueProject]:
+def _parse_csv(path: Path, source_url: str | None) -> list[QueueProject]:
+    frame = pd.read_csv(path)
+    frame.columns = [normalize_header(column) for column in frame.columns]
+    assert_expected_columns(list(frame.columns))
     projects: list[QueueProject] = []
-    workbook = pd.ExcelFile(path)
+    for row in frame.to_dict(orient="records"):
+        project = row_to_project(row, source_url)
+        if project:
+            projects.append(project)
+    return projects
+
+
+def parse_workbook(path: Path, source_url: str | None = None) -> list[QueueProject]:
+    # SPP's default endpoint serves CSV; if the file looks like CSV, parse it.
+    if path.suffix.lower() == ".csv":
+        return _parse_csv(path, source_url)
+    try:
+        workbook = pd.ExcelFile(path)
+    except ValueError:
+        return _parse_csv(path, source_url)
+
+    projects: list[QueueProject] = []
     candidate_sheets = [sheet for sheet in workbook.sheet_names if sheet in PROJECT_SHEETS]
     if not candidate_sheets:
         candidate_sheets = workbook.sheet_names[:1]
@@ -269,7 +300,8 @@ def parse_workbook(path: Path, source_url: str | None = None) -> list[QueueProje
 def download_report(url: str) -> Path:
     response = httpx.get(url, timeout=60.0, follow_redirects=True)
     response.raise_for_status()
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as handle:
+    suffix = ".csv" if "csv" in (response.headers.get("content-type") or "").lower() or url.lower().endswith(".csv") else ".xlsx"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as handle:
         handle.write(response.content)
         return Path(handle.name)
 
@@ -287,7 +319,7 @@ def source_report_for_url(url: str) -> SourceReport:
     return SourceReport(
         iso="SPP",
         source_url=url,
-        source_name="SPP Generation Interconnection Queue",
+        source_name="SPP GI Queue",
         report_date=date.today(),
     )
 
@@ -296,7 +328,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Ingest SPP Generator Interconnection Queue into Neon Postgres."
     )
-    parser.add_argument("--file", type=Path, help="Local SPP queue workbook")
+    parser.add_argument("--file", type=Path, help="Local SPP queue workbook or CSV")
     parser.add_argument(
         "--force",
         action="store_true",
