@@ -1,4 +1,5 @@
 import type {
+  AnalysisHeatmapProject,
   AnalysisData,
   DashboardData,
   FuelMixTrend,
@@ -174,6 +175,34 @@ type FuelMixTrendRow = {
   iso: string
   fuel_type: string | null
   project_count: string | number
+}
+
+type AnalysisHeatmapProjectRow = {
+  id: string
+  iso: string
+  lat: string | number
+  lng: string | number
+  mw_requested: string | number
+}
+
+function mapHeatmapProjectRows(rows: AnalysisHeatmapProjectRow[]): AnalysisHeatmapProject[] {
+  return rows
+    .map((row): AnalysisHeatmapProject | null => {
+      const lat = numberOrNull(row.lat)
+      const lng = numberOrNull(row.lng)
+      const mwRequested = numberOrNull(row.mw_requested)
+      if (lat === null || lng === null || mwRequested === null) {
+        return null
+      }
+      return {
+        id: row.id,
+        iso: row.iso,
+        lat,
+        lng,
+        mwRequested
+      }
+    })
+    .filter((project): project is AnalysisHeatmapProject => project !== null)
 }
 
 function numberOrNull(value: string | number | null): number | null {
@@ -596,6 +625,7 @@ export async function getAnalysisData(): Promise<AnalysisData> {
     return {
       generatedAt,
       coverage: [],
+      heatmapProjects: [],
       projectTrends: [],
       changeTrends: [],
       fuelMix: [],
@@ -606,7 +636,14 @@ export async function getAnalysisData(): Promise<AnalysisData> {
   const sql = getSql()
 
   try {
-    const [coverageRows, projectTrendRows, changeTrendRows, fuelMixRows, recentRows] =
+    const [
+      coverageRows,
+      heatmapRows,
+      projectTrendRows,
+      changeTrendRows,
+      fuelMixRows,
+      recentRows
+    ] =
       await Promise.all([
         sql`
           select
@@ -620,6 +657,29 @@ export async function getAnalysisData(): Promise<AnalysisData> {
             and report_date is not null
           group by iso
           order by iso
+        `,
+        sql`
+          select
+            id,
+            iso,
+            lat,
+            lng,
+            mw_requested
+          from projects
+          where iso = ANY(${SUPPORTED_ISO_LIST})
+            and lat is not null
+            and lng is not null
+            and mw_requested is not null
+            and mw_requested > 0
+            and lng between -125 and -66
+            and lat between 24 and 50
+            and not (
+              lower(
+                coalesce(current_status, '') || ' ' || coalesce(current_phase, '')
+              ) ~ '(withdrawn|cancelled|canceled|energized|completed|retired|inactive)'
+            )
+          order by mw_requested desc nulls last
+          limit 15000
         `,
         sql`
           select
@@ -695,6 +755,7 @@ export async function getAnalysisData(): Promise<AnalysisData> {
         reportCount: countValue(row.report_count),
         source: coverageSource(row.iso)
       })),
+      heatmapProjects: mapHeatmapProjectRows(heatmapRows as AnalysisHeatmapProjectRow[]),
       projectTrends: (projectTrendRows as MonthlyProjectTrendRow[]).map(
         (row): MonthlyProjectTrend => ({
           month: toMonthString(row.month),
@@ -724,6 +785,7 @@ export async function getAnalysisData(): Promise<AnalysisData> {
       return {
         generatedAt,
         coverage: [],
+        heatmapProjects: [],
         projectTrends: [],
         changeTrends: [],
         fuelMix: [],
@@ -946,10 +1008,18 @@ export async function getHeadroomReport(
   if (!process.env.DATABASE_URL) {
     return null
   }
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng) ||
+    lat < -90 ||
+    lat > 90 ||
+    lng < -180 ||
+    lng > 180
+  ) {
     return null
   }
-  const clampedRadius = Math.max(5, Math.min(150, radiusMiles))
+  const normalizedRadius = Number.isFinite(radiusMiles) ? radiusMiles : 25
+  const clampedRadius = Math.max(5, Math.min(150, normalizedRadius))
   const radiusMeters = clampedRadius * 1609.344
   const sql = getSql()
 
@@ -976,7 +1046,7 @@ export async function getHeadroomReport(
             )
         ),
         durations as (
-          select extract(epoch from (coalesce(energized_date, current_date) - filed_date)) / (60 * 60 * 24 * 30.4375) as months
+          select (coalesce(energized_date, current_date) - filed_date)::numeric / 30.4375 as months
           from nearby
           where filed_date is not null
             and withdrawn_date is null
@@ -1116,6 +1186,44 @@ export async function getHeadroomReport(
     }
   } catch (error) {
     if (isUndefinedRelationError(error)) return null
+    throw error
+  }
+}
+
+export async function getHeadroomHeatmapProjects(): Promise<AnalysisHeatmapProject[]> {
+  if (!process.env.DATABASE_URL) {
+    return []
+  }
+
+  const sql = getSql()
+
+  try {
+    const rows = await sql`
+      select
+        id,
+        iso,
+        lat,
+        lng,
+        mw_requested
+      from projects
+      where iso = ANY(${SUPPORTED_ISO_LIST})
+        and lat is not null
+        and lng is not null
+        and mw_requested is not null
+        and mw_requested > 0
+        and lng between -125 and -66
+        and lat between 24 and 50
+        and not (
+          lower(
+            coalesce(current_status, '') || ' ' || coalesce(current_phase, '')
+          ) ~ '(withdrawn|cancelled|canceled|retired|inactive)'
+        )
+      order by mw_requested desc nulls last
+      limit 25000
+    `
+    return mapHeatmapProjectRows(rows as AnalysisHeatmapProjectRow[])
+  } catch (error) {
+    if (isUndefinedRelationError(error)) return []
     throw error
   }
 }

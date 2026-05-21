@@ -1,5 +1,5 @@
 import { HeadroomExplorer } from "@/components/headroom/headroom-explorer"
-import { getHeadroomReport } from "@/lib/data"
+import { getHeadroomHeatmapProjects, getHeadroomReport } from "@/lib/data"
 
 export const dynamic = "force-dynamic"
 
@@ -19,8 +19,16 @@ export default async function HeadroomPage({ searchParams }: PageProps) {
   const lng = parseNumber(params.lng)
   const radius = parseNumber(params.radius) ?? 25
 
-  const report =
-    lat !== null && lng !== null ? await getHeadroomReport(lat, lng, radius) : null
+  const [report, heatmapProjects] = await Promise.all([
+    lat !== null && lng !== null ? getHeadroomReport(lat, lng, radius) : null,
+    getHeadroomHeatmapProjects()
+  ])
 
-  return <HeadroomExplorer initialReport={report} initialRadius={radius} />
+  return (
+    <HeadroomExplorer
+      initialReport={report}
+      initialRadius={radius}
+      heatmapProjects={heatmapProjects}
+    />
+  )
 }

@@ -105,6 +105,12 @@
 /* Lift the basemap from inky black toward neutral grey while staying dark.
    Applies to the shared GL canvas; markers are saturated colors that
    absorb the small brightness/saturation shift gracefully. */
+.maplibregl-map,
+.maplibregl-canvas-container,
+.maplibregl-canvas {
+  background: #151515;
+}
+
 .maplibregl-canvas {
   filter: brightness(1.22) saturate(0.92);
 }

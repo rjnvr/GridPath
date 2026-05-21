@@ -89,14 +89,13 @@ type ProjectFeatureCollection = GeoJSON.FeatureCollection<
   GeoJSON.Point,
   {
     id: string
+    projectIds: string
+    projectCount: number
     queueId: string
     projectName: string
     mwRequested: number | null
     fuelType: string
     fuelKey: string
-    offsetX: number
-    offsetY: number
-    offset: [number, number]
     currentPhase: string
     currentStatus: string
     filedDate: string | null
@@ -139,7 +138,6 @@ type PanelMode = "projects" | "events"
 type MapMode = "normal" | "fullscreen"
 
 const MAP_DEFAULT_HEIGHT = 620
-const MARKER_SPREAD_RADIUS = 18
 const MAP_VIEW_BOUNDS = {
   all: [
     [-124.8, 25.2],
@@ -344,6 +342,8 @@ const SEVERITY_STYLES: Record<QueueEventSeverity | string, string> = {
   info: "border-border bg-muted text-muted-foreground"
 }
 
+const MAP_LABEL_FONT = ["Open Sans Regular", "Arial Unicode MS Regular"]
+
 function eventTypeLabel(value: string): string {
   return EVENT_TYPE_LABELS[value] ?? value.replaceAll("_", " ")
 }
@@ -397,13 +397,21 @@ function tileStyle() {
     },
     layers: [
       {
+        id: "background",
+        type: "background",
+        paint: {
+          "background-color": "#151515"
+        }
+      },
+      {
         id: "dark-matter",
         type: "raster",
         source: "darkMatter",
         paint: {
-          "raster-brightness-min": 0.12,
-          "raster-contrast": -0.05,
-          "raster-saturation": -0.1
+          "raster-brightness-min": 0.08,
+          "raster-brightness-max": 0.82,
+          "raster-contrast": 0,
+          "raster-saturation": -0.12
         }
       }
     ]
@@ -441,17 +449,21 @@ function fuelMarkerImage(fuel: keyof typeof fuelColors): ImageData {
   const bgRadius = 13
   const color = fuelColors[fuel]
 
-  ctx.shadowColor = "rgba(0, 0, 0, 0.75)"
-  ctx.shadowBlur = 4
+  ctx.shadowColor = "rgba(15, 23, 42, 0.32)"
+  ctx.shadowBlur = 5
   ctx.shadowOffsetY = 1
+  ctx.fillStyle = "rgba(255, 255, 255, 0.94)"
+  ctx.beginPath()
+  ctx.arc(cx, cy, bgRadius, 0, Math.PI * 2)
+  ctx.fill()
+
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetY = 0
   ctx.lineWidth = 1.25
   ctx.strokeStyle = color
   ctx.beginPath()
   ctx.arc(cx, cy, bgRadius, 0, Math.PI * 2)
   ctx.stroke()
-
-  ctx.shadowBlur = 0
-  ctx.shadowOffsetY = 0
 
   drawFuelMarkerGlyph(ctx, fuel, color, cx, cy)
 
@@ -507,7 +519,8 @@ function drawFallbackFuelMarkerGlyph(
   fuel: keyof typeof fuelColors,
   color: string,
   cx: number,
-  cy: number
+  cy: number,
+  bgRadius = 13
 ) {
   const labels: Record<keyof typeof fuelColors, string> = {
     solar: "S",
@@ -519,6 +532,22 @@ function drawFallbackFuelMarkerGlyph(
   }
 
   ctx.save()
+  ctx.shadowColor = "rgba(15, 23, 42, 0.32)"
+  ctx.shadowBlur = 5
+  ctx.shadowOffsetY = 1
+  ctx.fillStyle = "rgba(255, 255, 255, 0.94)"
+  ctx.beginPath()
+  ctx.arc(cx, cy, bgRadius, 0, Math.PI * 2)
+  ctx.fill()
+
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetY = 0
+  ctx.lineWidth = 1.25
+  ctx.strokeStyle = color
+  ctx.beginPath()
+  ctx.arc(cx, cy, bgRadius, 0, Math.PI * 2)
+  ctx.stroke()
+
   ctx.fillStyle = color
   ctx.font = "700 12px system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
   ctx.textAlign = "center"
@@ -572,36 +601,30 @@ function fitMapToIso(map: MapLibreMap, iso: string, duration = 600) {
 }
 
 function projectsToGeoJson(projects: GridProject[]): ProjectFeatureCollection {
-  const visibleProjects = projects.filter((project) => project.lat !== null && project.lng !== null)
-  const coordinateCounts = new Map<string, number>()
+  const visibleProjects = projects.filter((project) => {
+    if (project.lat === null || project.lng === null) {
+      return false
+    }
+    return Number.isFinite(project.lat) && Number.isFinite(project.lng)
+  })
 
+  const colocatedGroups = new Map<string, GridProject[]>()
   for (const project of visibleProjects) {
-    const key = `${(project.lng as number).toFixed(5)},${(project.lat as number).toFixed(5)}`
-    coordinateCounts.set(key, (coordinateCounts.get(key) ?? 0) + 1)
+    const key = projectCoordinateKey(project)
+    const group = colocatedGroups.get(key)
+    if (group) {
+      group.push(project)
+    } else {
+      colocatedGroups.set(key, [project])
+    }
   }
-
-  const coordinateIndexes = new Map<string, number>()
 
   return {
     type: "FeatureCollection",
-    features: visibleProjects.map((project) => {
-      const coordinateKey = `${(project.lng as number).toFixed(5)},${(project.lat as number).toFixed(5)}`
-      const coordinateTotal = coordinateCounts.get(coordinateKey) ?? 1
-      const coordinateIndex = coordinateIndexes.get(coordinateKey) ?? 0
-      coordinateIndexes.set(coordinateKey, coordinateIndex + 1)
-
-      const spread =
-        coordinateTotal > 1
-          ? {
-              offsetX:
-                Math.cos((Math.PI * 2 * coordinateIndex) / coordinateTotal) *
-                MARKER_SPREAD_RADIUS,
-              offsetY:
-                Math.sin((Math.PI * 2 * coordinateIndex) / coordinateTotal) *
-                MARKER_SPREAD_RADIUS
-            }
-          : { offsetX: 0, offsetY: 0 }
-
+    features: Array.from(colocatedGroups.values()).map((group) => {
+      const sorted = [...group].sort((a, b) => a.id.localeCompare(b.id))
+      const project = sorted[0]
+      const totalMw = sorted.reduce((sum, item) => sum + (item.mwRequested ?? 0), 0)
       return {
         type: "Feature",
         geometry: {
@@ -610,21 +633,27 @@ function projectsToGeoJson(projects: GridProject[]): ProjectFeatureCollection {
         },
         properties: {
           id: project.id,
+          projectIds: sorted.map((item) => item.id).join("|"),
+          projectCount: sorted.length,
           queueId: project.queueId,
-          projectName: project.projectName ?? project.queueId,
-          mwRequested: project.mwRequested,
+          projectName:
+            sorted.length === 1
+              ? project.projectName ?? project.queueId
+              : `${sorted.length} projects at this location`,
+          mwRequested: sorted.length === 1 ? project.mwRequested : totalMw,
           fuelType: project.fuelType ?? "unknown",
-          fuelKey: normalizeFuelKey(project.fuelType),
-          offsetX: spread.offsetX,
-          offsetY: spread.offsetY,
-          offset: [spread.offsetX, spread.offsetY],
-          currentPhase: project.currentPhase ?? "Unknown",
-          currentStatus: project.currentStatus ?? "Unknown",
+          fuelKey: sorted.length === 1 ? normalizeFuelKey(project.fuelType) : "other",
+          currentPhase: sorted.length === 1 ? project.currentPhase ?? "Unknown" : "Multiple",
+          currentStatus: sorted.length === 1 ? project.currentStatus ?? "Unknown" : "Multiple",
           filedDate: project.filedDate
         }
       }
     })
   }
+}
+
+function projectCoordinateKey(project: GridProject): string {
+  return `${(project.lng as number).toFixed(6)},${(project.lat as number).toFixed(6)}`
 }
 
 function substationsToGeoJson(substations: Substation[]): SubstationFeatureCollection {
@@ -738,6 +767,14 @@ function isActiveProject(project: GridProject): boolean {
   return !/(withdrawn|cancelled|canceled|energized|completed|retired|inactive)/.test(statusText)
 }
 
+function isWorkingMapProject(project: GridProject): boolean {
+  if (project.withdrawnDate) {
+    return false
+  }
+  const statusText = [project.currentStatus, project.currentPhase].filter(Boolean).join(" ").toLowerCase()
+  return !/(withdrawn|cancelled|canceled|retired|inactive)/.test(statusText)
+}
+
 function passesStatus(project: GridProject, status: string): boolean {
   if (status === "all") return true
   if (status === "active") return isActiveProject(project)
@@ -783,6 +820,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 50 })
   const [selectedProject, setSelectedProject] = useState<GridProject | null>(null)
+  const [selectedProjectGroup, setSelectedProjectGroup] = useState<GridProject[] | null>(null)
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const popupRef = useRef<maplibregl.Popup | null>(null)
@@ -820,7 +858,11 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
       [
         ...new Set(
           initialData.projects
-            .filter((project) => filters.iso === "all" || project.iso === filters.iso)
+            .filter(
+              (project) =>
+                (filters.iso === "all" || project.iso === filters.iso) &&
+                isWorkingMapProject(project)
+            )
             .map((project) => project.currentStatus)
             .filter(Boolean)
         )
@@ -882,6 +924,10 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
       eventsLast7d
     }
   }, [filteredProjects, initialData.recentEvents])
+  const mapProjects = useMemo(
+    () => filteredProjects.filter(isWorkingMapProject),
+    [filteredProjects]
+  )
 
   const filteredEvents = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLowerCase()
@@ -900,11 +946,11 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
       )
     })
   }, [eventFilters, initialData.recentEvents, searchQuery])
-  const filteredProjectsRef = useRef<GridProject[]>(filteredProjects)
+  const mapProjectsRef = useRef<GridProject[]>(mapProjects)
 
   useEffect(() => {
-    filteredProjectsRef.current = filteredProjects
-  }, [filteredProjects])
+    mapProjectsRef.current = mapProjects
+  }, [mapProjects])
 
   const table = useReactTable({
     data: filteredProjects,
@@ -949,17 +995,17 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         minzoom: 3,
         layout: {
           "text-field": ["get", "name"],
-          "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+          "text-font": MAP_LABEL_FONT,
           "text-size": ["interpolate", ["linear"], ["zoom"], 3, 12, 6, 18],
-          "text-letter-spacing": 0.08,
+          "text-letter-spacing": 0.04,
           "text-allow-overlap": false,
           "text-ignore-placement": false
         },
         paint: {
-          "text-color": "#f5b942",
-          "text-halo-color": "rgba(10, 11, 13, 0.92)",
-          "text-halo-width": 2.2,
-          "text-halo-blur": 0.4,
+          "text-color": "#c8d0d8",
+          "text-halo-color": "rgba(8, 8, 8, 0.95)",
+          "text-halo-width": 1.4,
+          "text-halo-blur": 0,
           "text-opacity": 0.92
         }
       })
@@ -971,7 +1017,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         minzoom: 4.4,
         layout: {
           "text-field": ["get", "name"],
-          "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
+          "text-font": MAP_LABEL_FONT,
           "text-size": ["interpolate", ["linear"], ["zoom"], 4, 11, 7, 15],
           "text-offset": [0, 0.65],
           "text-variable-anchor": ["top", "bottom", "left", "right"],
@@ -999,11 +1045,11 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             "#5b9bd5",
             "Sacramento",
             "#a78bfa",
-            "#f5b942"
+            "#8fb6ff"
           ],
-          "text-halo-color": "rgba(10, 11, 13, 0.94)",
-          "text-halo-width": 1.8,
-          "text-halo-blur": 0.25,
+          "text-halo-color": "rgba(8, 8, 8, 0.95)",
+          "text-halo-width": 1.3,
+          "text-halo-blur": 0,
           "text-opacity": 0.96
         }
       })
@@ -1018,22 +1064,114 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         source: "substations",
         paint: {
           "circle-radius": 2.5,
-          "circle-color": "#92959c",
-          "circle-opacity": 0.5,
+          "circle-color": "#64748b",
+          "circle-opacity": 0.55,
           "circle-stroke-width": 0.5,
-          "circle-stroke-color": "#0e0f10"
+          "circle-stroke-color": "#ffffff"
         }
       })
 
       map.addSource("projects", {
         type: "geojson",
-        data: projectsToGeoJson(filteredProjectsRef.current)
+        data: projectsToGeoJson(mapProjectsRef.current),
+        cluster: true,
+        clusterRadius: 50,
+        clusterMaxZoom: 8
       })
       ensureFuelMarkerIcons(map)
+      map.addLayer({
+        id: "project-clusters",
+        type: "circle",
+        source: "projects",
+        filter: ["has", "point_count"],
+        paint: {
+          "circle-color": [
+            "step",
+            ["get", "point_count"],
+            "rgba(245, 185, 66, 0.88)",
+            10,
+            "rgba(245, 158, 11, 0.9)",
+            50,
+            "rgba(234, 88, 12, 0.92)",
+            200,
+            "rgba(220, 38, 38, 0.94)"
+          ],
+          "circle-radius": [
+            "step",
+            ["get", "point_count"],
+            14,
+            10,
+            18,
+            50,
+            24,
+            200,
+            30
+          ],
+          "circle-stroke-width": 1.5,
+          "circle-stroke-color": "rgba(255, 255, 255, 0.92)"
+        }
+      })
+      map.addLayer({
+        id: "project-cluster-count",
+        type: "symbol",
+        source: "projects",
+        filter: ["has", "point_count"],
+        layout: {
+          "text-field": ["get", "point_count_abbreviated"],
+          "text-font": MAP_LABEL_FONT,
+          "text-size": 13,
+          "text-allow-overlap": true,
+          "text-ignore-placement": true
+        },
+        paint: {
+          "text-color": "#111827",
+          "text-halo-color": "rgba(255, 255, 255, 0.86)",
+          "text-halo-width": 0.8,
+          "text-halo-blur": 0
+        }
+      })
+      map.addLayer({
+        id: "project-points",
+        type: "circle",
+        source: "projects",
+        filter: ["!", ["has", "point_count"]],
+        paint: {
+          "circle-color": [
+            "match",
+            ["get", "fuelKey"],
+            "solar",
+            fuelColors.solar,
+            "wind",
+            fuelColors.wind,
+            "storage",
+            fuelColors.storage,
+            "gas",
+            fuelColors.gas,
+            "hydro",
+            fuelColors.hydro,
+            fuelColors.other
+          ],
+          "circle-radius": [
+            "interpolate",
+            ["linear"],
+            ["coalesce", ["get", "mwRequested"], 0],
+            0,
+            5,
+            500,
+            7,
+            1000,
+            9
+          ],
+          "circle-opacity": 0.72,
+          "circle-stroke-color": "rgba(255, 255, 255, 0.9)",
+          "circle-stroke-width": 1
+        }
+      })
       map.addLayer({
         id: "projects",
         type: "symbol",
         source: "projects",
+        filter: ["!", ["has", "point_count"]],
         layout: {
           "icon-image": [
             "match",
@@ -1061,18 +1199,57 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             1000,
             1
           ],
-          "icon-offset": [
-            "array",
-            "number",
-            2,
-            ["get", "offset"]
-          ],
           "icon-allow-overlap": true,
           "icon-ignore-placement": true
         },
         paint: {
           "icon-opacity": 0.96
         }
+      })
+      map.addLayer({
+        id: "project-point-count",
+        type: "symbol",
+        source: "projects",
+        filter: [
+          "all",
+          ["!", ["has", "point_count"]],
+          [">", ["get", "projectCount"], 1]
+        ],
+        layout: {
+          "text-field": ["to-string", ["get", "projectCount"]],
+          "text-font": MAP_LABEL_FONT,
+          "text-size": 11,
+          "text-allow-overlap": true,
+          "text-ignore-placement": true
+        },
+        paint: {
+          "text-color": "#ffffff",
+          "text-halo-color": "rgba(17, 24, 39, 0.8)",
+          "text-halo-width": 0.6,
+          "text-halo-blur": 0
+        }
+      })
+
+      map.on("mouseenter", "project-clusters", () => {
+        map.getCanvas().style.cursor = "pointer"
+      })
+      map.on("mouseleave", "project-clusters", () => {
+        map.getCanvas().style.cursor = ""
+      })
+      map.on("click", "project-clusters", (event) => {
+        const feature = event.features?.[0]
+        const clusterId = feature?.properties?.cluster_id
+        if (clusterId === undefined || clusterId === null) {
+          return
+        }
+        const source = map.getSource("projects") as GeoJSONSource
+        source.getClusterExpansionZoom(clusterId).then((zoom) => {
+          const coordinates = (feature?.geometry as GeoJSON.Point).coordinates as [number, number]
+          map.easeTo({
+            center: coordinates,
+            zoom: Math.min(zoom + 0.25, 12)
+          })
+        })
       })
 
       map.on("mouseenter", "projects", (event) => {
@@ -1094,13 +1271,40 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         popupRef.current?.remove()
         popupRef.current = null
       })
+      map.on("mouseenter", "project-point-count", () => {
+        map.getCanvas().style.cursor = "pointer"
+      })
+      map.on("mouseleave", "project-point-count", () => {
+        map.getCanvas().style.cursor = ""
+      })
+
+      function selectProjectFeature(
+        feature: ProjectFeatureCollection["features"][number] | undefined
+      ) {
+        if (!feature) {
+          return
+        }
+        const projectIds = feature.properties.projectIds
+        const projects = projectIds
+          .split("|")
+          .map((projectId) => projectsById.get(projectId))
+          .filter((project): project is GridProject => Boolean(project))
+        if (projects.length > 1) {
+          setSelectedProject(null)
+          setSelectedProjectGroup(projects)
+        } else {
+          setSelectedProject(projects[0] ?? null)
+          setSelectedProjectGroup(null)
+        }
+      }
 
       map.on("click", "projects", (event) => {
         const feature = event.features?.[0] as ProjectFeatureCollection["features"][number] | undefined
-        const projectId = feature?.properties.id
-        if (projectId) {
-          setSelectedProject(projectsById.get(projectId) ?? null)
-        }
+        selectProjectFeature(feature)
+      })
+      map.on("click", "project-point-count", (event) => {
+        const feature = event.features?.[0] as ProjectFeatureCollection["features"][number] | undefined
+        selectProjectFeature(feature)
       })
     })
 
@@ -1124,8 +1328,8 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     if (!map?.isStyleLoaded() || !map.getSource("projects")) {
       return
     }
-    ;(map.getSource("projects") as GeoJSONSource).setData(projectsToGeoJson(filteredProjects))
-  }, [filteredProjects])
+    ;(map.getSource("projects") as GeoJSONSource).setData(projectsToGeoJson(mapProjects))
+  }, [mapProjects])
 
   useEffect(() => {
     const map = mapRef.current
@@ -1161,6 +1365,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault()
       setSelectedProject(project)
+      setSelectedProjectGroup(null)
     }
   }
 
@@ -1482,7 +1687,10 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                 {table.getRowModel().rows.map((row) => (
                   <tr
                     key={row.id}
-                    onClick={() => setSelectedProject(row.original)}
+                    onClick={() => {
+                      setSelectedProject(row.original)
+                      setSelectedProjectGroup(null)
+                    }}
                     onKeyDown={(event) => handleProjectRowKeyDown(event, row.original)}
                     role="button"
                     tabIndex={0}
@@ -1541,13 +1749,25 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             <EventTable
               events={filteredEvents}
               projectsById={projectsById}
-              onSelectProject={setSelectedProject}
+              onSelectProject={(project) => {
+                setSelectedProject(project)
+                setSelectedProjectGroup(null)
+              }}
             />
           )}
         </motion.div>
       </section>
 
-      {selectedProject ? (
+      {selectedProjectGroup ? (
+        <ProjectGroupDrawer
+          projects={selectedProjectGroup}
+          onSelectProject={(project) => {
+            setSelectedProject(project)
+            setSelectedProjectGroup(null)
+          }}
+          onClose={() => setSelectedProjectGroup(null)}
+        />
+      ) : selectedProject ? (
         <ProjectDrawer project={selectedProject} onClose={() => setSelectedProject(null)} />
       ) : null}
     </main>
@@ -1647,6 +1867,90 @@ function EventTable({
         </tbody>
       </table>
     </div>
+  )
+}
+
+function ProjectGroupDrawer({
+  projects,
+  onSelectProject,
+  onClose
+}: {
+  projects: GridProject[]
+  onSelectProject: (project: GridProject) => void
+  onClose: () => void
+}) {
+  const totalMw = projects.reduce((sum, project) => sum + (project.mwRequested ?? 0), 0)
+  const first = projects[0]
+
+  return (
+    <motion.aside
+      initial={{ x: 32, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={{ x: 32, opacity: 0 }}
+      transition={{ duration: 0.22, ease: "easeOut" }}
+      className="fixed right-0 top-0 z-20 h-screen w-[460px] border-l border-border bg-card shadow-2xl"
+    >
+      <div className="flex items-start justify-between gap-3 border-b border-border p-5">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center rounded-sm border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+              {first?.iso ?? "ISO"}
+            </span>
+            <span className="font-mono text-xs text-muted-foreground">
+              {projects.length.toLocaleString()} projects
+            </span>
+          </div>
+          <h2 className="mt-2 text-xl font-semibold tracking-tight">Projects at this location</h2>
+          <div className="mt-1.5 flex items-center gap-2 font-mono text-sm tabular-nums text-muted-foreground">
+            <span className="text-foreground">{totalMw.toLocaleString()}</span>
+            <span>MW queued</span>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-sm border border-border p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          aria-label="Close"
+        >
+          <X size={16} />
+        </button>
+      </div>
+      <div className="space-y-2 overflow-y-auto p-5">
+        {projects.map((project) => {
+          const FuelIcon = fuelIconFor(project.fuelType)
+          const fuelTone = fuelTokenClassFor(project.fuelType)
+          return (
+            <button
+              key={project.id}
+              type="button"
+              onClick={() => onSelectProject(project)}
+              className="w-full rounded border border-border bg-background p-3 text-left transition-colors hover:bg-muted/50"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs text-muted-foreground">{project.queueId}</span>
+                    <span className="inline-flex items-center gap-1 text-xs capitalize text-muted-foreground">
+                      <FuelIcon size={12} className={fuelTone} />
+                      {project.fuelType ?? "—"}
+                    </span>
+                  </div>
+                  <p className="mt-1 truncate font-medium">
+                    {project.projectName ?? "Unnamed project"}
+                  </p>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">
+                    {project.currentPhase ?? "Unknown phase"} · {project.currentStatus ?? "Unknown status"}
+                  </p>
+                </div>
+                <span className="shrink-0 font-mono text-sm tabular-nums">
+                  {project.mwRequested?.toLocaleString() ?? "—"} MW
+                </span>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </motion.aside>
   )
 }
 

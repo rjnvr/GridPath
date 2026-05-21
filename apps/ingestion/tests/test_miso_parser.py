@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from gridpath_ingestion.miso import assert_expected_columns, parse_workbook
+from gridpath_ingestion.miso import assert_expected_columns, parse_json_report, parse_workbook
 
 
 def test_parser_normalizes_required_fields(tmp_path: Path) -> None:
@@ -106,6 +106,61 @@ def test_parser_accepts_alternate_queue_id_column(tmp_path: Path) -> None:
     projects = parse_workbook(workbook)
     assert len(projects) == 1
     assert projects[0].queue_id == "J2024-099"
+
+
+def test_json_parser_reads_current_public_api_shape(tmp_path: Path) -> None:
+    report = tmp_path / "miso.json"
+    report.write_text(
+        """
+        [
+          {
+            "projectNumber": "J4183",
+            "applicationStatus": "Active",
+            "studyPhase": "Phase 1",
+            "summerNetMW": 99.9,
+            "fuelType": "Solar",
+            "county": "Cook",
+            "state": "IL",
+            "queueDate": "2025-04-01T04:00:00+00:00",
+            "inService": "2027-04-28T04:00:00+00:00"
+          }
+        ]
+        """
+    )
+
+    projects = parse_json_report(report)
+
+    assert len(projects) == 1
+    assert projects[0].iso == "MISO"
+    assert projects[0].queue_id == "J4183"
+    assert projects[0].fuel_type == "solar"
+    assert projects[0].current_phase == "Feasibility"
+    assert projects[0].energized_date is None
+    assert projects[0].mw_requested is not None
+
+
+def test_json_parser_marks_done_projects_energized(tmp_path: Path) -> None:
+    report = tmp_path / "miso-done.json"
+    report.write_text(
+        """
+        [
+          {
+            "projectNumber": "J1000",
+            "applicationStatus": "Done",
+            "studyPhase": "GIA",
+            "summerNetMW": 50,
+            "county": "Cook",
+            "state": "IL",
+            "inService": "2024-01-15T05:00:00+00:00"
+          }
+        ]
+        """
+    )
+
+    projects = parse_json_report(report)
+
+    assert projects[0].current_phase == "Energized"
+    assert projects[0].energized_date is not None
 
 
 def test_parser_skips_rows_without_queue_id(tmp_path: Path) -> None:
