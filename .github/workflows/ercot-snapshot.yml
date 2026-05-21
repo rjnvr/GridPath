@@ -44,6 +44,14 @@ jobs:
         # MISO file path rotates each cycle; allow drift until validated.
         continue-on-error: true
         run: python -m gridpath_ingestion.miso
+      - name: Run SPP ingestion
+        env:
+          DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SPP_QUEUE_URL: ${{ secrets.SPP_QUEUE_URL }}
+        # SPP queue endpoint sits behind ops portal; allow drift until validated.
+        continue-on-error: true
+        run: python -m gridpath_ingestion.spp
       - name: Verify ingestion freshness
         env:
           DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}

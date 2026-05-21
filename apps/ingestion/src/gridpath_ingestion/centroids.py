@@ -222,6 +222,45 @@ COUNTY_CENTROIDS: dict[str, dict[str, tuple[float, float]]] = {
         "MISSOULA": (47.0353, -113.9269),
         "GALLATIN": (45.5524, -111.1689),
     },
+    # --- SPP states (top counties by population / wind & solar activity) ---
+    "OK": {
+        "OKLAHOMA": (35.5514, -97.4076),
+        "TULSA": (36.1234, -95.9418),
+        "CLEVELAND": (35.2027, -97.3266),
+        "COMANCHE": (34.6602, -98.4717),
+        "CANADIAN": (35.5409, -97.9870),
+        "ROGERS": (36.3719, -95.6071),
+    },
+    "KS": {
+        "JOHNSON": (38.8839, -94.8214),
+        "SEDGWICK": (37.6786, -97.4631),
+        "SHAWNEE": (39.0473, -95.7434),
+        "WYANDOTTE": (39.1167, -94.7589),
+        "DOUGLAS": (38.8849, -95.2785),
+        "FORD": (37.6909, -100.0184),
+    },
+    "NE": {
+        "DOUGLAS": (41.2942, -96.1772),
+        "LANCASTER": (40.7785, -96.6889),
+        "SARPY": (41.1247, -96.1112),
+        "HALL": (40.8702, -98.5008),
+        "BUFFALO": (40.8587, -99.0855),
+    },
+    "NM": {
+        "BERNALILLO": (35.0531, -106.6700),
+        "DONA ANA": (32.3527, -106.8312),
+        "SANTA FE": (35.5191, -105.9989),
+        "SAN JUAN": (36.5078, -108.3217),
+        "LEA": (32.7935, -103.4080),
+        "CHAVES": (33.3617, -104.4644),
+    },
+    "WY": {
+        "LARAMIE": (41.3060, -104.6863),
+        "NATRONA": (42.9619, -106.7642),
+        "SWEETWATER": (41.6593, -108.8814),
+        "CAMPBELL": (44.2491, -105.5491),
+        "ALBANY": (41.6545, -105.7235),
+    },
 }
 
 # State geographic centers for fallback when county is missing or unknown.
@@ -255,6 +294,12 @@ STATE_CENTROIDS: dict[str, tuple[float, float]] = {
     "AR": (34.9697, -92.3731),
     "LA": (31.1695, -91.8678),
     "MT": (46.9219, -110.4544),
+    # SPP territory
+    "OK": (35.5653, -96.9289),
+    "KS": (38.5266, -96.7265),
+    "NE": (41.1254, -98.2681),
+    "NM": (34.8405, -106.2485),
+    "WY": (42.7559, -107.3025),
 }
 
 
