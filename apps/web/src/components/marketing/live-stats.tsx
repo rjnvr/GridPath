@@ -10,12 +10,19 @@ interface LiveStatsProps {
 export function LiveStats({ totalProjects, totalMwRequested, changesLast7d, isoCount }: LiveStatsProps) {
   const gw = totalMwRequested != null ? totalMwRequested / 1000 : 0
   return (
-    <section aria-label="GridPath live stats" className="border-y border-border bg-background">
-      <div className="mx-auto grid max-w-5xl grid-cols-2 divide-border md:grid-cols-4 md:divide-x">
-        <Stat label="Projects tracked" value={totalProjects} />
-        <Stat label="GW in queue" value={gw} decimals={gw >= 100 ? 0 : 1} suffix=" GW" />
-        <Stat label="Changes this week" value={changesLast7d} />
-        <Stat label="ISOs covered" value={isoCount} />
+    <section
+      aria-label="GridPath live stats"
+      style={{
+        backgroundColor: "#f5f5f7",
+        borderTop: "1px solid #e0e0e0",
+        borderBottom: "1px solid #e0e0e0"
+      }}
+    >
+      <div className="mx-auto grid max-w-[1440px] grid-cols-2 md:grid-cols-4">
+        <Stat label="Projects tracked" value={totalProjects} last={false} />
+        <Stat label="GW in queue" value={gw} decimals={gw >= 100 ? 0 : 1} suffix=" GW" last={false} />
+        <Stat label="Changes this week" value={changesLast7d} last={false} />
+        <Stat label="ISOs covered" value={isoCount} last />
       </div>
     </section>
   )
@@ -25,22 +32,55 @@ function Stat({
   label,
   value,
   decimals = 0,
-  suffix
+  suffix,
+  last
 }: {
   label: string
   value: number
   decimals?: number
   suffix?: string
+  last: boolean
 }) {
   return (
-    <div className="px-6 py-8 md:py-10">
-      <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+    <div
+      className="px-8 py-10"
+      style={{
+        borderRight: last ? "none" : "1px solid #e0e0e0"
+      }}
+    >
+      <p
+        style={{
+          fontSize: "12px",
+          fontWeight: 400,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: "#6e6e73",
+          lineHeight: 1
+        }}
+      >
         {label}
       </p>
-      <p className="mt-2 flex items-baseline gap-0.5 text-3xl tracking-tight text-foreground md:text-4xl">
+      <p
+        className="mt-3 flex items-baseline gap-1"
+        style={{
+          fontSize: "40px",
+          fontWeight: 600,
+          letterSpacing: "-0.374px",
+          lineHeight: 1.1,
+          color: "#1d1d1f"
+        }}
+      >
         <NumberTicker value={value} decimalPlaces={decimals} />
         {suffix ? (
-          <span className="text-base font-medium text-muted-foreground">{suffix}</span>
+          <span
+            style={{
+              fontSize: "17px",
+              fontWeight: 400,
+              color: "#6e6e73"
+            }}
+          >
+            {suffix}
+          </span>
         ) : null}
       </p>
     </div>

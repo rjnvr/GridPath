@@ -25,15 +25,43 @@ export function RecentActivity({ changes }: RecentActivityProps) {
   if (changes.length === 0) return null
   const tickerItems = changes.slice(0, 12)
   return (
-    <section className="border-b border-border">
-      <div className="mx-auto max-w-5xl px-6 py-24">
+    <section style={{ backgroundColor: "#252527" }}>
+      <div className="mx-auto max-w-[1440px] px-8 py-[80px]">
         <div className="flex items-end justify-between gap-6">
           <div>
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">Live activity</p>
-            <h2 className="mt-3 text-balance text-3xl font-semibold tracking-tight md:text-4xl">
+            <p
+              style={{
+                fontSize: "12px",
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: "#cccccc",
+                lineHeight: 1
+              }}
+            >
+              Live activity
+            </p>
+            <h2
+              className="mt-4 text-balance"
+              style={{
+                fontSize: "clamp(28px, 3vw, 40px)",
+                fontWeight: 600,
+                lineHeight: 1.1,
+                letterSpacing: 0,
+                color: "#ffffff"
+              }}
+            >
               What changed today.
             </h2>
-            <p className="mt-3 max-w-xl text-base text-muted-foreground">
+            <p
+              className="mt-4"
+              style={{
+                fontSize: "17px",
+                lineHeight: 1.47,
+                letterSpacing: "-0.374px",
+                color: "#cccccc",
+                maxWidth: "480px"
+              }}
+            >
               Every field we&apos;ve seen change in the last 24 hours, straight from the ingestion
               pipeline. No login required.
             </p>
