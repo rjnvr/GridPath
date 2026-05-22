@@ -100,6 +100,6 @@ The app queries Neon only from server-side Next.js code. Database credentials ar
 
 ## Known Limitations
 
-- County-centroid project locations.
+- Project locations default to county centroids with low-confidence provenance; exact addresses require permit, parcel, or other external enrichment.
 - Desktop-first UI.
 - No billing, forecasting, user-facing alert emails, or transmission lines yet.

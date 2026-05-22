@@ -171,6 +171,11 @@ function ProjectProfile({ project }: { project: GridProject }) {
     ["State", project.state],
     ["Latitude", project.lat?.toFixed(5)],
     ["Longitude", project.lng?.toFixed(5)],
+    ["Location source", project.locationSource],
+    ["Location confidence", project.locationConfidence],
+    ["Address", project.address],
+    ["Point of interconnection", project.pointOfInterconnection],
+    ["Location notes", project.locationNotes],
     ["First seen", formatDateTime(project.firstSeenAt)],
     ["Last updated", formatDateTime(project.lastUpdatedAt)]
   ]

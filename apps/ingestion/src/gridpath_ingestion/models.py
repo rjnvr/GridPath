@@ -19,6 +19,11 @@ class QueueProject(BaseModel):
     state: str | None = None
     lat: float | None = None
     lng: float | None = None
+    location_source: str | None = None
+    location_confidence: str | None = None
+    address: str | None = None
+    point_of_interconnection: str | None = None
+    location_notes: str | None = None
     current_phase: str | None = None
     current_status: str | None = None
     filed_date: date | None = None

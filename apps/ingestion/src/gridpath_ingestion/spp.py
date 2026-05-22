@@ -43,7 +43,13 @@ EXPECTED_COLUMNS = {
     "State",
 }
 
-QUEUE_ID_COLUMNS = ("Request Number", "GI Number", "Generation Interconnection Number", "Queue Number", "Queue #")
+QUEUE_ID_COLUMNS = (
+    "Request Number",
+    "GI Number",
+    "Generation Interconnection Number",
+    "Queue Number",
+    "Queue #",
+)
 
 COLUMN_ALIASES = {
     "Request Number": "queue_id",
@@ -300,7 +306,8 @@ def parse_workbook(path: Path, source_url: str | None = None) -> list[QueueProje
 def download_report(url: str) -> Path:
     response = httpx.get(url, timeout=60.0, follow_redirects=True)
     response.raise_for_status()
-    suffix = ".csv" if "csv" in (response.headers.get("content-type") or "").lower() or url.lower().endswith(".csv") else ".xlsx"
+    content_type = (response.headers.get("content-type") or "").lower()
+    suffix = ".csv" if "csv" in content_type or url.lower().endswith(".csv") else ".xlsx"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as handle:
         handle.write(response.content)
         return Path(handle.name)

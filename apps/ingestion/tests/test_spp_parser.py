@@ -41,12 +41,48 @@ def test_parser_maps_spp_phase_taxonomy(tmp_path: Path) -> None:
     workbook = tmp_path / "spp-phases.xlsx"
     pd.DataFrame(
         [
-            {"Request Number": "S-001", "Nameplate MW": "100", "County": "X", "State": "KS", "Status": "Feasibility"},
-            {"Request Number": "S-002", "Nameplate MW": "50", "County": "X", "State": "KS", "Status": "DISIS"},
-            {"Request Number": "S-003", "Nameplate MW": "200", "County": "X", "State": "KS", "Status": "AFS"},
-            {"Request Number": "S-004", "Nameplate MW": "150", "County": "X", "State": "KS", "Status": "IA Executed"},
-            {"Request Number": "S-005", "Nameplate MW": "75", "County": "X", "State": "KS", "Status": "Withdrawn"},
-            {"Request Number": "S-006", "Nameplate MW": "60", "County": "X", "State": "KS", "Status": "In Service"},
+            {
+                "Request Number": "S-001",
+                "Nameplate MW": "100",
+                "County": "X",
+                "State": "KS",
+                "Status": "Feasibility",
+            },
+            {
+                "Request Number": "S-002",
+                "Nameplate MW": "50",
+                "County": "X",
+                "State": "KS",
+                "Status": "DISIS",
+            },
+            {
+                "Request Number": "S-003",
+                "Nameplate MW": "200",
+                "County": "X",
+                "State": "KS",
+                "Status": "AFS",
+            },
+            {
+                "Request Number": "S-004",
+                "Nameplate MW": "150",
+                "County": "X",
+                "State": "KS",
+                "Status": "IA Executed",
+            },
+            {
+                "Request Number": "S-005",
+                "Nameplate MW": "75",
+                "County": "X",
+                "State": "KS",
+                "Status": "Withdrawn",
+            },
+            {
+                "Request Number": "S-006",
+                "Nameplate MW": "60",
+                "County": "X",
+                "State": "KS",
+                "Status": "In Service",
+            },
         ]
     ).to_excel(workbook, sheet_name="Active", index=False)
 

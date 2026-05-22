@@ -303,18 +303,23 @@ STATE_CENTROIDS: dict[str, tuple[float, float]] = {
 }
 
 
+def _normalized_county(county: str) -> str:
+    normalized = county.upper().replace(" COUNTY", "").strip()
+    # Drop trailing "PARISH" (Louisiana) and "BOROUGH" (rare).
+    for suffix in (" PARISH", " BOROUGH"):
+        if normalized.endswith(suffix):
+            normalized = normalized[: -len(suffix)].strip()
+    if "/" in normalized:
+        normalized = normalized.split("/", maxsplit=1)[0].strip()
+    return normalized
+
+
 def centroid_for_county(county: str | None, state: str) -> tuple[float | None, float | None]:
     state_key = state.upper() if state else ""
     state_table = COUNTY_CENTROIDS.get(state_key, {})
 
     if county:
-        normalized = county.upper().replace(" COUNTY", "").strip()
-        # Drop trailing "PARISH" (Louisiana) and "BOROUGH" (rare).
-        for suffix in (" PARISH", " BOROUGH"):
-            if normalized.endswith(suffix):
-                normalized = normalized[: -len(suffix)].strip()
-        if "/" in normalized:
-            normalized = normalized.split("/", maxsplit=1)[0].strip()
+        normalized = _normalized_county(county)
         match = state_table.get(normalized)
         if match is not None:
             return match
@@ -326,3 +331,41 @@ def centroid_for_county(county: str | None, state: str) -> tuple[float | None, f
         return state_match
 
     return None, None
+
+
+def county_centroid_location(county: str | None, state: str | None) -> dict[str, str | None]:
+    if not county or not state:
+        return {
+            "location_source": None,
+            "location_confidence": None,
+            "location_notes": None,
+        }
+
+    state_key = state.upper()
+    state_table = COUNTY_CENTROIDS.get(state_key, {})
+    normalized = _normalized_county(county)
+    if normalized in state_table:
+        return {
+            "location_source": "county_centroid",
+            "location_confidence": "low",
+            "location_notes": "Derived from county centroid; not a project address.",
+        }
+
+    if state_key in STATE_CENTROIDS:
+        return {
+            "location_source": "state_centroid",
+            "location_confidence": "low",
+            "location_notes": (
+                "County/state captured from queue report; "
+                "coordinates fall back to state centroid."
+            ),
+        }
+
+    return {
+        "location_source": "county",
+        "location_confidence": "low",
+        "location_notes": (
+            "County/state captured from queue report; "
+            "no project address or centroid available."
+        ),
+    }

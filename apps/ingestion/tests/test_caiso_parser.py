@@ -30,6 +30,7 @@ def test_caiso_parser_normalizes_public_queue(tmp_path: Path) -> None:
                     "Net MWs to Grid": "150",
                     "County": "KERN",
                     "State": "CA",
+                    "Substation": "Kern 230 kV",
                     "Utility": "SCE",
                     "Current On-line Date": "2029-01-01",
                     "System Impact Study or Phase I Cluster Study": "Complete",
@@ -48,6 +49,9 @@ def test_caiso_parser_normalizes_public_queue(tmp_path: Path) -> None:
     assert projects[0].current_phase == "System Impact"
     assert projects[0].lat is not None
     assert projects[0].lng is not None
+    assert projects[0].location_source == "county_centroid"
+    assert projects[0].location_confidence == "low"
+    assert projects[0].point_of_interconnection == "Kern 230 kV"
 
 
 def test_caiso_schema_drift_fails_loudly() -> None:
