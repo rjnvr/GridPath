@@ -15,7 +15,7 @@ export const revalidate = 0
 export default async function HomePage() {
   const stats = await getLandingStats()
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-screen flex-col" style={{ backgroundColor: "#ffffff", backgroundImage: "none" }}>
       <MarketingHeader />
       <main>
         <Hero latestSnapshotAt={stats.latestSnapshotAt} />

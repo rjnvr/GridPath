@@ -65,20 +65,11 @@ export function InterconnectFlow() {
   }, [feedOffset])
 
   return (
-    <section className="relative overflow-hidden border-b border-border bg-background">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-40"
-        style={{
-          background:
-            "linear-gradient(180deg, hsl(var(--primary) / 0.04), transparent)"
-        }}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute left-0 top-0 h-px w-full bg-gradient-to-r from-transparent via-primary/40 to-transparent"
-      />
-      <div className="relative mx-auto max-w-6xl px-6 py-20">
+    <section
+      className="relative overflow-hidden"
+      style={{ backgroundColor: "#1d1d1f" }}
+    >
+      <div className="relative mx-auto max-w-[1440px] px-8 py-[80px]">
         <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
           <div>
             <p className="text-xs uppercase tracking-widest text-muted-foreground">
