@@ -20,7 +20,7 @@ from typing import Any
 import httpx
 import pandas as pd
 
-from gridpath_ingestion.centroids import centroid_for_county
+from gridpath_ingestion.centroids import centroid_for_county, county_centroid_location
 from gridpath_ingestion.db import record_source_report_failure, upsert_projects
 from gridpath_ingestion.models import QueueProject, SourceReport
 
@@ -63,6 +63,12 @@ COLUMN_ALIASES = {
     "Net MW": "mw_requested",
     "County": "county",
     "State": "state",
+    "POI": "point_of_interconnection",
+    "Point of Interconnection": "point_of_interconnection",
+    "Interconnection Point": "point_of_interconnection",
+    "Substation": "point_of_interconnection",
+    "Station": "point_of_interconnection",
+    "Bus": "point_of_interconnection",
     "Status": "current_status",
     "Project Status": "current_status",
     "Current Status": "current_status",
@@ -231,6 +237,7 @@ def row_to_project(row: dict[str, Any], source_url: str | None = None) -> QueueP
     state = clean_text(mapped.get("state"))
     lat, lng = centroid_for_county(county, state) if state else (None, None)
     current_status = clean_text(mapped.get("current_status"))
+    location = county_centroid_location(county, state)
 
     return QueueProject(
         iso="MISO",
@@ -242,6 +249,8 @@ def row_to_project(row: dict[str, Any], source_url: str | None = None) -> QueueP
         state=state,
         lat=lat,
         lng=lng,
+        point_of_interconnection=clean_text(mapped.get("point_of_interconnection")),
+        **location,
         current_phase=normalize_phase(current_status),
         current_status=current_status,
         filed_date=parse_date(mapped.get("filed_date")),
@@ -262,6 +271,14 @@ def json_row_to_project(row: dict[str, Any], source_url: str | None = None) -> Q
     county = clean_text(row.get("county"))
     state = clean_text(row.get("state"))
     lat, lng = centroid_for_county(county, state) if state else (None, None)
+    location = county_centroid_location(county, state)
+    point_of_interconnection = clean_text(
+        row.get("pointOfInterconnection")
+        or row.get("point_of_interconnection")
+        or row.get("poi")
+        or row.get("substation")
+        or row.get("bus")
+    )
 
     current_status = clean_text(row.get("applicationStatus"))
     study_phase = clean_text(row.get("studyPhase"))
@@ -300,6 +317,8 @@ def json_row_to_project(row: dict[str, Any], source_url: str | None = None) -> Q
         state=state,
         lat=lat,
         lng=lng,
+        point_of_interconnection=point_of_interconnection,
+        **location,
         current_phase=normalized_phase,
         current_status=current_status,
         filed_date=parse_date(row.get("queueDate")),

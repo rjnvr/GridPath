@@ -19,6 +19,7 @@ def test_parser_normalizes_required_fields(tmp_path: Path) -> None:
                 "Fuel": "Solar PV",
                 "County": "Loudoun",
                 "State": "VA",
+                "Substation": "Loudoun 500 kV",
                 "Status": "Active",
                 "Submitted Date": "2024-02-15",
                 "Interconnection Customer": "Acme Energy",
@@ -35,6 +36,9 @@ def test_parser_normalizes_required_fields(tmp_path: Path) -> None:
     assert projects[0].current_phase == "Active"
     assert projects[0].state == "VA"
     assert projects[0].mw_requested is not None
+    assert projects[0].location_source == "county"
+    assert projects[0].location_confidence == "low"
+    assert projects[0].point_of_interconnection == "Loudoun 500 kV"
 
 
 def test_parser_maps_pjm_statuses_to_phases(tmp_path: Path) -> None:
@@ -119,6 +123,7 @@ def test_xml_parser_reads_current_public_export_shape(tmp_path: Path) -> None:
             <Name>Elwood 345 kV</Name>
             <State>IL</State>
             <County>Will</County>
+            <PointOfInterconnection>Elwood 345 kV</PointOfInterconnection>
             <Status>Active</Status>
             <TransmissionOwner>ComEd</TransmissionOwner>
             <MaximumFacilityOutput>1610.0</MaximumFacilityOutput>
@@ -140,6 +145,8 @@ def test_xml_parser_reads_current_public_export_shape(tmp_path: Path) -> None:
     assert projects[0].current_phase == "Active"
     assert projects[0].state == "IL"
     assert projects[0].mw_requested is not None
+    assert projects[0].location_source == "county"
+    assert projects[0].point_of_interconnection == "Elwood 345 kV"
 
 
 def test_schema_drift_fails_loudly() -> None:

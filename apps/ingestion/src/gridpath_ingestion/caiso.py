@@ -13,7 +13,7 @@ from typing import Any
 import httpx
 import pandas as pd
 
-from gridpath_ingestion.centroids import centroid_for_county
+from gridpath_ingestion.centroids import centroid_for_county, county_centroid_location
 from gridpath_ingestion.db import record_source_report_failure, upsert_projects
 from gridpath_ingestion.discovery import DiscoveredReport, discover_latest_caiso_public_queue_report
 from gridpath_ingestion.models import QueueProject, SourceReport
@@ -31,6 +31,15 @@ EXPECTED_COLUMNS = {
     "State",
     "Net MWs to Grid",
 }
+
+POI_COLUMNS = (
+    "Point of Interconnection",
+    "Interconnection Point",
+    "POI",
+    "Substation",
+    "Station",
+    "Bus",
+)
 
 FUEL_MAP = {
     "battery": "storage",
@@ -149,6 +158,11 @@ def row_to_project(row: dict[str, Any], source_url: str | None = None) -> QueueP
     county = clean_text(row.get("County"))
     lat, lng = centroid_for_county(county, state)
     application_status = clean_text(row.get("Application Status"))
+    point_of_interconnection = next(
+        (clean_text(row.get(column)) for column in POI_COLUMNS if clean_text(row.get(column))),
+        None,
+    )
+    location = county_centroid_location(county, state)
 
     return QueueProject(
         iso="CAISO",
@@ -160,6 +174,8 @@ def row_to_project(row: dict[str, Any], source_url: str | None = None) -> QueueP
         state=state,
         lat=lat,
         lng=lng,
+        point_of_interconnection=point_of_interconnection,
+        **location,
         current_phase=normalize_phase(row),
         current_status=application_status,
         filed_date=parse_date(row.get("Interconnection Request Receive Date")),

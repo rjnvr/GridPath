@@ -30,6 +30,7 @@ def test_parser_normalizes_required_fields(tmp_path: Path) -> None:
                     "County": "Harris",
                     "Capacity (MW)": "250",
                     "GIM Study Phase": "FIS",
+                    "Point of Interconnection": "Harris 345 kV",
                     "Screening Study Started": "2024-01-05",
                     "Interconnecting Entity": "Acme Energy",
                 }
@@ -49,6 +50,10 @@ def test_parser_normalizes_required_fields(tmp_path: Path) -> None:
     assert projects[0].current_phase == "System Impact"
     assert projects[0].lat is not None
     assert projects[0].lng is not None
+    assert projects[0].state == "TX"
+    assert projects[0].location_source == "county_centroid"
+    assert projects[0].location_confidence == "low"
+    assert projects[0].point_of_interconnection == "Harris 345 kV"
 
 
 def test_schema_drift_fails_loudly() -> None:

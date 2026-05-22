@@ -41,6 +41,11 @@ type ProjectRow = {
   state: string | null
   lat: string | number | null
   lng: string | number | null
+  location_source: string | null
+  location_confidence: string | null
+  address: string | null
+  point_of_interconnection: string | null
+  location_notes: string | null
   current_phase: string | null
   current_status: string | null
   filed_date: Date | string | null
@@ -256,6 +261,11 @@ function mapProject(row: ProjectRow, changes: ProjectChange[], events: QueueEven
     state: row.state,
     lat: numberOrNull(row.lat),
     lng: numberOrNull(row.lng),
+    locationSource: row.location_source,
+    locationConfidence: row.location_confidence,
+    address: row.address,
+    pointOfInterconnection: row.point_of_interconnection,
+    locationNotes: row.location_notes,
     currentPhase: row.current_phase,
     currentStatus: row.current_status,
     filedDate: toDateString(row.filed_date),

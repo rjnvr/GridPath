@@ -61,3 +61,27 @@ def centroid_for_county(county: str | None, state: str) -> tuple[float | None, f
     if "/" in normalized:
         normalized = normalized.split("/", maxsplit=1)[0].strip()
     return COUNTY_CENTROIDS.get(state.upper(), {}).get(normalized, (None, None))
+
+
+def county_centroid_location(county: str | None, state: str | None) -> dict[str, str | None]:
+    if not county or not state:
+        return {
+            "location_source": None,
+            "location_confidence": None,
+            "location_notes": None,
+        }
+    lat, lng = centroid_for_county(county, state)
+    if lat is None or lng is None:
+        return {
+            "location_source": "county",
+            "location_confidence": "low",
+            "location_notes": (
+                "County/state captured from queue report; "
+                "no project address or centroid available."
+            ),
+        }
+    return {
+        "location_source": "county_centroid",
+        "location_confidence": "low",
+        "location_notes": "Derived from county centroid; not a project address.",
+    }

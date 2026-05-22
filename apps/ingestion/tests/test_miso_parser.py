@@ -19,6 +19,7 @@ def test_parser_normalizes_required_fields(tmp_path: Path) -> None:
                 "Generator Type": "Solar",
                 "County": "Cook",
                 "State": "IL",
+                "POI": "Lakeshore 345 kV",
                 "Status": "Phase 2",
                 "Queue Date": "2024-03-12",
                 "Interconnection Customer": "Lakeshore Energy",
@@ -35,6 +36,9 @@ def test_parser_normalizes_required_fields(tmp_path: Path) -> None:
     assert projects[0].current_phase == "System Impact"
     assert projects[0].state == "IL"
     assert projects[0].mw_requested is not None
+    assert projects[0].location_source == "county"
+    assert projects[0].location_confidence == "low"
+    assert projects[0].point_of_interconnection == "Lakeshore 345 kV"
 
 
 def test_parser_maps_miso_phase_taxonomy(tmp_path: Path) -> None:
@@ -121,6 +125,7 @@ def test_json_parser_reads_current_public_api_shape(tmp_path: Path) -> None:
             "fuelType": "Solar",
             "county": "Cook",
             "state": "IL",
+            "pointOfInterconnection": "Cook County 345 kV",
             "queueDate": "2025-04-01T04:00:00+00:00",
             "inService": "2027-04-28T04:00:00+00:00"
           }
@@ -137,6 +142,8 @@ def test_json_parser_reads_current_public_api_shape(tmp_path: Path) -> None:
     assert projects[0].current_phase == "Feasibility"
     assert projects[0].energized_date is None
     assert projects[0].mw_requested is not None
+    assert projects[0].location_source == "county"
+    assert projects[0].point_of_interconnection == "Cook County 345 kV"
 
 
 def test_json_parser_marks_done_projects_energized(tmp_path: Path) -> None:

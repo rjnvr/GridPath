@@ -13,7 +13,7 @@ from typing import Any
 import httpx
 import pandas as pd
 
-from gridpath_ingestion.centroids import centroid_for_county
+from gridpath_ingestion.centroids import centroid_for_county, county_centroid_location
 from gridpath_ingestion.db import (
     project_count_for_iso,
     record_source_report_failure,
@@ -51,6 +51,12 @@ COLUMN_ALIASES = {
     "Status": "current_status",
     "GIM Study Phase": "current_status",
     "GINR Study Phase": "current_status",
+    "POI": "point_of_interconnection",
+    "Point of Interconnection": "point_of_interconnection",
+    "Interconnection Point": "point_of_interconnection",
+    "Substation": "point_of_interconnection",
+    "Station": "point_of_interconnection",
+    "Bus": "point_of_interconnection",
     "Model Ready Date": "filed_date",
     "Interconnection Agreement Signed Date": "ia_signed_date",
     "IA Signed Date": "ia_signed_date",
@@ -173,6 +179,7 @@ def row_to_project(row: dict[str, Any], source_url: str | None = None) -> QueueP
     county = clean_text(mapped.get("county"))
     lat, lng = centroid_for_county(county, "TX")
     current_status = clean_text(mapped.get("current_status"))
+    location = county_centroid_location(county, "TX")
 
     return QueueProject(
         iso="ERCOT",
@@ -181,8 +188,11 @@ def row_to_project(row: dict[str, Any], source_url: str | None = None) -> QueueP
         mw_requested=parse_decimal(mapped.get("mw_requested")),
         fuel_type=normalize_fuel(mapped.get("fuel_type")),
         county=county,
+        state="TX",
         lat=lat,
         lng=lng,
+        point_of_interconnection=clean_text(mapped.get("point_of_interconnection")),
+        **location,
         current_phase=normalize_phase(current_status),
         current_status=current_status,
         filed_date=parse_date(mapped.get("filed_date")),

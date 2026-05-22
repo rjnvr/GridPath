@@ -61,6 +61,11 @@ export type GridProject = {
   state: string | null
   lat: number | null
   lng: number | null
+  locationSource: string | null
+  locationConfidence: string | null
+  address: string | null
+  pointOfInterconnection: string | null
+  locationNotes: string | null
   currentPhase: string | null
   currentStatus: string | null
   filedDate: string | null

@@ -18,6 +18,11 @@ TRACKED_FIELDS = [
     "county",
     "lat",
     "lng",
+    "location_source",
+    "location_confidence",
+    "address",
+    "point_of_interconnection",
+    "location_notes",
     "current_phase",
     "current_status",
     "filed_date",
@@ -295,7 +300,9 @@ def upsert_projects(
                     """
                     insert into projects (
                       iso, queue_id, project_name, mw_requested, fuel_type, county, state,
-                      lat, lng, geom, current_phase, current_status, filed_date,
+                      lat, lng, geom, location_source, location_confidence, address,
+                      point_of_interconnection, location_notes, current_phase,
+                      current_status, filed_date,
                       ia_signed_date, energized_date, withdrawn_date, owner_company,
                       raw_source_url, first_seen_at, last_updated_at
                     )
@@ -307,6 +314,8 @@ def upsert_projects(
                              st_makepoint(%(lng)s::double precision, %(lat)s::double precision),
                              4326
                            ) end,
+                      %(location_source)s, %(location_confidence)s, %(address)s,
+                      %(point_of_interconnection)s, %(location_notes)s,
                       %(current_phase)s, %(current_status)s, %(filed_date)s,
                       %(ia_signed_date)s, %(energized_date)s, %(withdrawn_date)s,
                       %(owner_company)s, %(raw_source_url)s, now(), now()
@@ -320,6 +329,11 @@ def upsert_projects(
                       lat = excluded.lat,
                       lng = excluded.lng,
                       geom = excluded.geom,
+                      location_source = excluded.location_source,
+                      location_confidence = excluded.location_confidence,
+                      address = excluded.address,
+                      point_of_interconnection = excluded.point_of_interconnection,
+                      location_notes = excluded.location_notes,
                       current_phase = excluded.current_phase,
                       current_status = excluded.current_status,
                       filed_date = excluded.filed_date,
