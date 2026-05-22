@@ -68,6 +68,17 @@ CAISO rows are stored with `iso = 'CAISO'` in the same Neon database and appear 
 
 If no file or `CAISO_QUEUE_URL` is provided, the script discovers `publicqueuereport.xlsx` from the CAISO Public Queue Report library page.
 
+## Outcome Labels Backfill
+
+Derive terminal/signal labels (energized, withdrawn, stalled_long, transferred_owner, downsized_major, in_queue) for every project from snapshot history. Foundation for the withdrawal-probability scoring layer.
+
+```bash
+cd apps/ingestion
+python -m gridpath_ingestion.outcomes
+```
+
+The backfill is idempotent — it truncates and rebuilds `outcome_labels` from `projects` + `queue_events` inside a single transaction.
+
 ## Data Health
 
 Visit `/health` in the web app to inspect latest snapshot time by ISO, source report status, event volume, project counts, phase/fuel breakdowns, and recent tracked changes.
