@@ -36,7 +36,7 @@ def test_parser_normalizes_required_fields(tmp_path: Path) -> None:
     assert projects[0].current_phase == "Active"
     assert projects[0].state == "VA"
     assert projects[0].mw_requested is not None
-    assert projects[0].location_source == "county"
+    assert projects[0].location_source == "county_centroid"
     assert projects[0].location_confidence == "low"
     assert projects[0].point_of_interconnection == "Loudoun 500 kV"
 
@@ -145,7 +145,7 @@ def test_xml_parser_reads_current_public_export_shape(tmp_path: Path) -> None:
     assert projects[0].current_phase == "Active"
     assert projects[0].state == "IL"
     assert projects[0].mw_requested is not None
-    assert projects[0].location_source == "county"
+    assert projects[0].location_source == "county_centroid"
     assert projects[0].point_of_interconnection == "Elwood 345 kV"
 
 

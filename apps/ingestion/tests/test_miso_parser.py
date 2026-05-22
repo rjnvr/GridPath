@@ -36,7 +36,7 @@ def test_parser_normalizes_required_fields(tmp_path: Path) -> None:
     assert projects[0].current_phase == "System Impact"
     assert projects[0].state == "IL"
     assert projects[0].mw_requested is not None
-    assert projects[0].location_source == "county"
+    assert projects[0].location_source == "county_centroid"
     assert projects[0].location_confidence == "low"
     assert projects[0].point_of_interconnection == "Lakeshore 345 kV"
 
@@ -142,7 +142,7 @@ def test_json_parser_reads_current_public_api_shape(tmp_path: Path) -> None:
     assert projects[0].current_phase == "Feasibility"
     assert projects[0].energized_date is None
     assert projects[0].mw_requested is not None
-    assert projects[0].location_source == "county"
+    assert projects[0].location_source == "county_centroid"
     assert projects[0].point_of_interconnection == "Cook County 345 kV"
 
 
