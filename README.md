@@ -90,6 +90,10 @@ Apply matches:
 npm run enrich:locations -- --eia-plant-file ~/Downloads/eia860m_plants.csv
 ```
 
+Replace the sample path with the actual downloaded EIA file. EIA publishes 860M as
+monthly XLS/XLSX workbooks on https://www.eia.gov/electricity/data/eia860m/.
+The enrichment job reads CSV, XLS, and XLSX files.
+
 The job only overwrites low-confidence centroid locations or lower-quality POI matches.
 POI/substation matches are stored as `location_source = 'poi_substation_match'` with
 medium confidence and notes clarifying that the coordinate is the interconnection point,

@@ -175,9 +175,17 @@ def normalize_header(value: str) -> str:
 
 
 def load_eia_plants(path: Path, source_name: str | None = None) -> list[EiaPlantRecord]:
-    frame = (
-        pd.read_excel(path) if path.suffix.lower() in {".xlsx", ".xls"} else pd.read_csv(path)
-    )
+    if not path.exists():
+        raise FileNotFoundError(
+            f"EIA plant file does not exist: {path}. Download an EIA-860M XLS/XLSX file "
+            "or pass the actual local path with --eia-plant-file."
+        )
+
+    if path.suffix.lower() in {".xlsx", ".xls"}:
+        sheets = pd.read_excel(path, sheet_name=None)
+        frame = pd.concat(sheets.values(), ignore_index=True)
+    else:
+        frame = pd.read_csv(path)
 
     plants: list[EiaPlantRecord] = []
     for row in frame.to_dict(orient="records"):
