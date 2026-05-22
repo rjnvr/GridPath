@@ -1,4 +1,11 @@
+import { ArrowRight } from "lucide-react"
 import Link from "next/link"
+
+import { AnimatedGradientText } from "@/components/magicui/animated-gradient-text"
+import { AuroraText } from "@/components/magicui/aurora-text"
+import { BorderBeam } from "@/components/magicui/border-beam"
+import { TypingAnimation } from "@/components/magicui/typing-animation"
+import { Button } from "@/components/ui/button"
 
 import { GridTopology } from "./grid-topology"
 
@@ -19,119 +26,68 @@ function relativeFromNow(value: string | null) {
 
 export function Hero({ latestSnapshotAt }: HeroProps) {
   const freshness = relativeFromNow(latestSnapshotAt)
-
   return (
-    <section
-      className="relative overflow-hidden"
-      style={{ backgroundColor: "#ffffff" }}
-    >
-      <div className="mx-auto max-w-[1440px] px-8 py-[80px]">
-        <div className="grid items-center gap-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
-          {/* Left: text */}
+    <section className="relative overflow-hidden border-b border-border bg-background">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-80"
+        style={{
+          background:
+            "radial-gradient(60% 80% at 50% 0%, hsl(var(--primary) / 0.08), transparent 70%)"
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent"
+      />
+      <div className="relative mx-auto max-w-6xl px-6 py-20 md:py-24">
+        <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
           <div>
             {freshness ? (
-              <div className="mb-6 inline-flex items-center gap-2">
-                <span className="relative flex h-2 w-2 shrink-0">
-                  <span
-                    className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-60"
-                    style={{ backgroundColor: "#0066cc" }}
-                  />
-                  <span
-                    className="relative inline-flex h-2 w-2 rounded-full"
-                    style={{ backgroundColor: "#0066cc" }}
-                  />
+              <AnimatedGradientText>
+                <span className="relative mr-1 inline-flex h-1.5 w-1.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
                 </span>
-                <span
-                  style={{
-                    fontSize: "12px",
-                    letterSpacing: "-0.12px",
-                    color: "#6e6e73",
-                    lineHeight: 1
-                  }}
-                >
-                  Live · updated {freshness}
+                <span className="font-mono uppercase tracking-wide">
+                  Live · last snapshot {freshness}
                 </span>
-              </div>
+              </AnimatedGradientText>
             ) : null}
-
-            <h1
-              className="text-balance"
-              style={{
-                fontSize: "clamp(40px, 4vw, 56px)",
-                fontWeight: 600,
-                lineHeight: 1.07,
-                letterSpacing: "-0.28px",
-                color: "#1d1d1f",
-                maxWidth: "540px"
-              }}
-            >
-              Track every project in America&apos;s interconnection queue.
+            <h1 className="mt-6 max-w-4xl text-balance text-5xl font-semibold tracking-tight md:text-7xl">
+              Track every project in{" "}
+              <AuroraText>America&apos;s interconnection queue</AuroraText>.
             </h1>
-
-            <p
-              className="mt-6 text-balance"
-              style={{
-                fontSize: "21px",
-                fontWeight: 400,
-                lineHeight: "1.19",
-                letterSpacing: "0.231px",
-                color: "#6e6e73",
-                maxWidth: "440px"
-              }}
-            >
-              Daily ingestion of ERCOT and CAISO queues — normalized, diffed,
-              and ready. Stop diffing spreadsheets.
+            <p className="mt-6 max-w-2xl text-balance text-lg text-muted-foreground md:text-xl">
+              GridPath ingests the ERCOT and CAISO queue reports daily, normalizes them into one
+              schema, and records every field that changes, so you can stop diffing spreadsheets.
             </p>
-
-            {/* CTA pair */}
+            <div className="mt-6 flex max-w-2xl items-center gap-3 rounded-md border border-border bg-card/60 px-3 py-2 font-mono text-xs text-muted-foreground shadow-[0_14px_40px_hsl(var(--primary)/0.04)] backdrop-blur">
+              <span className="flex h-2 w-2 shrink-0 rounded-full bg-primary shadow-[0_0_18px_hsl(var(--primary)/0.55)]" />
+              <TypingAnimation
+                phrases={[
+                  "diffing ERCOT queue changes...",
+                  "normalizing CAISO interconnection fields...",
+                  "flagging MW revisions and status moves..."
+                ]}
+              />
+            </div>
             <div className="mt-10 flex flex-wrap items-center gap-3">
-              <Link
-                href="/signup"
-                className="inline-flex items-center transition-transform active:scale-95"
-                style={{
-                  backgroundColor: "#0066cc",
-                  color: "#ffffff",
-                  borderRadius: "9999px",
-                  padding: "11px 22px",
-                  fontSize: "17px",
-                  fontWeight: 400,
-                  letterSpacing: "-0.374px",
-                  lineHeight: 1.47,
-                  textDecoration: "none"
-                }}
-              >
-                Start free
-              </Link>
-              <Link
-                href="/login"
-                className="inline-flex items-center transition-transform active:scale-95"
-                style={{
-                  border: "1px solid #0066cc",
-                  color: "#0066cc",
-                  backgroundColor: "transparent",
-                  borderRadius: "9999px",
-                  padding: "11px 22px",
-                  fontSize: "17px",
-                  fontWeight: 400,
-                  letterSpacing: "-0.374px",
-                  lineHeight: 1.47,
-                  textDecoration: "none"
-                }}
-              >
-                Sign in
-              </Link>
+              <div className="relative isolate overflow-hidden rounded-md">
+                <Button asChild size="lg">
+                  <Link href="/signup">
+                    Start free
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+                <BorderBeam size={120} duration={5} />
+              </div>
+              <Button asChild size="lg" variant="ghost">
+                <Link href="/login">Sign in</Link>
+              </Button>
             </div>
           </div>
-
-          {/* Right: product visualization */}
-          <div
-            className="relative aspect-[6/5] w-full max-w-[640px] justify-self-center overflow-hidden rounded-lg lg:justify-self-end"
-            style={{
-              border: "1px solid #e0e0e0",
-              backgroundColor: "#f5f5f7",
-              boxShadow: "rgba(0, 0, 0, 0.22) 3px 5px 30px 0"
-            }}
-          >
+          <div className="relative aspect-[6/5] w-full max-w-[640px] justify-self-center rounded-lg border border-border bg-card p-1 shadow-[0_24px_80px_hsl(var(--primary)/0.08)] lg:justify-self-end">
             <GridTopology />
           </div>
         </div>
