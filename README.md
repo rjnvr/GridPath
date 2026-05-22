@@ -68,6 +68,37 @@ CAISO rows are stored with `iso = 'CAISO'` in the same Neon database and appear 
 
 If no file or `CAISO_QUEUE_URL` is provided, the script discovers `publicqueuereport.xlsx` from the CAISO Public Queue Report library page.
 
+## Project Location Enrichment
+
+Queue reports often publish county and point-of-interconnection fields, not exact project
+parcel coordinates. After queue ingestion and HIFLD substation loading, run the location
+enrichment job to replace county/state centroids where there is a stronger public match:
+
+- completed or energized projects can match EIA-860/EIA-860M plant coordinates;
+- active projects can match HIFLD substation coordinates from the project's point of
+  interconnection.
+
+Preview matches without writing:
+
+```bash
+npm run enrich:locations -- --dry-run --eia-plant-file ~/Downloads/eia860m_plants.csv
+```
+
+Apply matches:
+
+```bash
+npm run enrich:locations -- --eia-plant-file ~/Downloads/eia860m_plants.csv
+```
+
+Replace the sample path with the actual downloaded EIA file. EIA publishes 860M as
+monthly XLS/XLSX workbooks on https://www.eia.gov/electricity/data/eia860m/.
+The enrichment job reads CSV, XLS, and XLSX files.
+
+The job only overwrites low-confidence centroid locations or lower-quality POI matches.
+POI/substation matches are stored as `location_source = 'poi_substation_match'` with
+medium confidence and notes clarifying that the coordinate is the interconnection point,
+not necessarily the generator parcel.
+
 ## Outcome Labels Backfill
 
 Derive terminal/signal labels (energized, withdrawn, stalled_long, transferred_owner, downsized_major, in_queue) for every project from snapshot history. Foundation for the withdrawal-probability scoring layer.
@@ -100,6 +131,9 @@ The app queries Neon only from server-side Next.js code. Database credentials ar
 
 ## Known Limitations
 
-- Project locations default to county centroids with low-confidence provenance; exact addresses require permit, parcel, or other external enrichment.
+- Project locations default to county centroids with low-confidence provenance until the
+  location enrichment job finds EIA plant coordinates or HIFLD POI/substation matches.
+  Exact project parcel coordinates still require permit, parcel, or other external
+  enrichment where the public queue does not disclose them.
 - Desktop-first UI.
 - No billing, forecasting, user-facing alert emails, or transmission lines yet.
