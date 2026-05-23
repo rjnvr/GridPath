@@ -154,6 +154,87 @@ def test_parser_reads_csv(tmp_path: Path) -> None:
     assert projects[0].current_phase == "Facilities"
 
 
+def test_parser_reads_current_spp_csv_shape(tmp_path: Path) -> None:
+    csv_path = tmp_path / "GI_ActiveRequest.csv"
+    header = [
+        "Generation Interconnection Number",
+        "IFS Queue Number",
+        "Current Cluster",
+        "Cluster Group",
+        " Nearest Town or County",
+        "State",
+        "TO at POI",
+        "In-Service Date",
+        "Commercial Operation Date",
+        "Cessation Date",
+        "Original Generator Commercial Op Date",
+        "Capacity",
+        "MAX Summer MW",
+        "MAX Winter MW",
+        "Service Type",
+        "Requested Maximum Injection Capability (MW)",
+        "Requested Network Resource Deliverability (MW)",
+        "Nameplate Capacity",
+        "Generation Type",
+        "Fuel Type",
+        "Substation or Line",
+        "Request Received",
+        "Date Withdrawn",
+        "Status",
+        "JTIQ Participant",
+        "JTIQ Commitment",
+        "Cause of Delay",
+    ]
+    row = [
+        "TI-18-0827",
+        "",
+        "RTOE Transitional Cluster",
+        "",
+        "Weld County",
+        "CO",
+        "TSGT",
+        "6/24/2022",
+        "",
+        "",
+        "",
+        "145",
+        "145",
+        "145",
+        "ER/NR",
+        "0",
+        "0",
+        "0",
+        "Wind",
+        "Wind",
+        "Redtail 115 Substation",
+        "8/27/2018",
+        "",
+        "IA FULLY EXECUTED/ON SCHEDULE",
+        "",
+        "",
+        "",
+    ]
+    csv_path.write_text(
+        "\n".join(
+            [
+                '"Last Updated On",5/22/2026,',
+                ",".join(header),
+                ",".join(f'"{value}"' for value in row),
+            ]
+        )
+    )
+
+    projects = parse_workbook(csv_path)
+
+    assert len(projects) == 1
+    assert projects[0].queue_id == "TI-18-0827"
+    assert projects[0].county == "Weld County"
+    assert projects[0].state == "CO"
+    assert projects[0].mw_requested is not None
+    assert projects[0].fuel_type == "wind"
+    assert projects[0].current_phase == "IA Executed"
+
+
 def test_schema_drift_fails_loudly() -> None:
     with pytest.raises(ValueError, match="schema drift"):
         assert_expected_columns(["Request Number", "Fuel"])

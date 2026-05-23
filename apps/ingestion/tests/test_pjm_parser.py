@@ -5,7 +5,12 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from gridpath_ingestion.pjm import assert_expected_columns, parse_workbook, parse_xml_report
+from gridpath_ingestion.pjm import (
+    assert_expected_columns,
+    parse_report,
+    parse_workbook,
+    parse_xml_report,
+)
 
 
 def test_parser_normalizes_required_fields(tmp_path: Path) -> None:
@@ -147,6 +152,32 @@ def test_xml_parser_reads_current_public_export_shape(tmp_path: Path) -> None:
     assert projects[0].mw_requested is not None
     assert projects[0].location_source == "county_centroid"
     assert projects[0].point_of_interconnection == "Elwood 345 kV"
+
+
+def test_report_parser_sniffs_xml_without_xml_extension(tmp_path: Path) -> None:
+    report = tmp_path / "PlanningQueues.download"
+    report.write_text(
+        """\ufeff<?xml version="1.0" encoding="UTF-8"?>
+        <Projects>
+          <Project>
+            <ProjectNumber>AE1-071</ProjectNumber>
+            <Name>Example 345 kV</Name>
+            <State>PA</State>
+            <County>Allegheny</County>
+            <Status>Active</Status>
+            <MaximumFacilityOutput>25.0</MaximumFacilityOutput>
+            <Fuel>Solar</Fuel>
+          </Project>
+        </Projects>
+        """,
+        encoding="utf-8",
+    )
+
+    projects = parse_report(report)
+
+    assert len(projects) == 1
+    assert projects[0].queue_id == "AE1-071"
+    assert projects[0].fuel_type == "solar"
 
 
 def test_schema_drift_fails_loudly() -> None:

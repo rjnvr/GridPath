@@ -10,6 +10,7 @@ as a loud error rather than silent data loss.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import sys
@@ -39,7 +40,6 @@ PROJECT_SHEETS = {
 }
 
 EXPECTED_COLUMNS = {
-    "County",
     "State",
 }
 
@@ -49,6 +49,24 @@ QUEUE_ID_COLUMNS = (
     "Generation Interconnection Number",
     "Queue Number",
     "Queue #",
+)
+
+COUNTY_COLUMNS = (
+    "County",
+    "Nearest Town or County",
+)
+
+CAPACITY_COLUMNS = (
+    "MW",
+    "Capacity",
+    "Capacity (MW)",
+    "Nameplate MW",
+    "Nameplate Capacity",
+    "Nameplate Capacity (MW)",
+    "Net MW",
+    "Summer MW",
+    "MAX Summer MW",
+    "Requested Maximum Injection Capability (MW)",
 )
 
 COLUMN_ALIASES = {
@@ -67,12 +85,17 @@ COLUMN_ALIASES = {
     "Resource Type": "fuel_type",
     "Type": "fuel_type",
     "MW": "mw_requested",
+    "Capacity": "mw_requested",
     "Capacity (MW)": "mw_requested",
     "Nameplate MW": "mw_requested",
+    "Nameplate Capacity": "mw_requested",
     "Nameplate Capacity (MW)": "mw_requested",
     "Net MW": "mw_requested",
     "Summer MW": "mw_requested",
+    "MAX Summer MW": "mw_requested",
+    "Requested Maximum Injection Capability (MW)": "mw_requested",
     "County": "county",
+    "Nearest Town or County": "county",
     "State": "state",
     "Status": "current_status",
     "Project Status": "current_status",
@@ -88,6 +111,7 @@ COLUMN_ALIASES = {
     "Commercial Operation Date": "energized_date",
     "Commercial Operation": "energized_date",
     "Actual COD": "energized_date",
+    "Date Withdrawn": "withdrawn_date",
     "Withdrawn Date": "withdrawn_date",
     "Withdrawal Date": "withdrawn_date",
     "Withdraw Date": "withdrawn_date",
@@ -152,19 +176,12 @@ def assert_expected_columns(columns: list[str]) -> None:
     has_queue_id = any(candidate in normalized for candidate in QUEUE_ID_COLUMNS)
     if not has_queue_id:
         missing.append(" / ".join(QUEUE_ID_COLUMNS))
-    has_capacity = any(
-        candidate in normalized
-        for candidate in (
-            "MW",
-            "Capacity (MW)",
-            "Nameplate MW",
-            "Nameplate Capacity (MW)",
-            "Net MW",
-            "Summer MW",
-        )
-    )
+    has_county = any(candidate in normalized for candidate in COUNTY_COLUMNS)
+    if not has_county:
+        missing.append("County / Nearest Town or County")
+    has_capacity = any(candidate in normalized for candidate in CAPACITY_COLUMNS)
     if not has_capacity:
-        missing.append("MW / Nameplate MW / Capacity (MW)")
+        missing.append("MW / Nameplate MW / Capacity")
     if missing:
         raise ValueError(f"SPP schema drift detected. Missing expected columns: {missing}")
 
@@ -174,7 +191,8 @@ def find_header_row(path: Path, sheet_name: str) -> int:
     for index, row in preview.iterrows():
         values = {normalize_header(value) for value in row.tolist() if not pd.isna(value)}
         has_queue_id = any(candidate in values for candidate in QUEUE_ID_COLUMNS)
-        if has_queue_id and {"County", "State"}.issubset(values):
+        has_county = any(candidate in values for candidate in COUNTY_COLUMNS)
+        if has_queue_id and has_county and "State" in values:
             return int(index)
     return 0
 
@@ -264,7 +282,20 @@ def row_to_project(row: dict[str, Any], source_url: str | None = None) -> QueueP
 
 
 def _parse_csv(path: Path, source_url: str | None) -> list[QueueProject]:
-    frame = pd.read_csv(path)
+    header_row = 0
+    with path.open(newline="", encoding="utf-8-sig") as handle:
+        reader = csv.reader(handle)
+        for index, row in enumerate(reader):
+            if index >= 10:
+                break
+            values = {normalize_header(value) for value in row if value.strip()}
+            has_queue_id = any(candidate in values for candidate in QUEUE_ID_COLUMNS)
+            has_county = any(candidate in values for candidate in COUNTY_COLUMNS)
+            if has_queue_id and has_county and "State" in values:
+                header_row = index
+                break
+
+    frame = pd.read_csv(path, header=header_row)
     frame.columns = [normalize_header(column) for column in frame.columns]
     assert_expected_columns(list(frame.columns))
     projects: list[QueueProject] = []

@@ -350,12 +350,23 @@ def parse_xml_report(path: Path, source_url: str | None = None) -> list[QueuePro
 def parse_report(path: Path, source_url: str | None = None) -> list[QueueProject]:
     if path.suffix.lower() == ".xml":
         return parse_xml_report(path, source_url)
+    with path.open("rb") as handle:
+        prefix = handle.read(512).lstrip()
+    if prefix.startswith(b"\xef\xbb\xbf"):
+        prefix = prefix[3:].lstrip()
+    if prefix.startswith(b"<?xml") or prefix.startswith(b"<Projects"):
+        return parse_xml_report(path, source_url)
     return parse_workbook(path, source_url)
 
 
 def parse_workbook(path: Path, source_url: str | None = None) -> list[QueueProject]:
     projects: list[QueueProject] = []
-    workbook = pd.ExcelFile(path)
+    try:
+        workbook = pd.ExcelFile(path)
+    except ValueError as exc:
+        raise ValueError(
+            "PJM report is not a readable Excel workbook or recognized XML export."
+        ) from exc
     candidate_sheets = [sheet for sheet in workbook.sheet_names if sheet in PROJECT_SHEETS]
     # Fall back to the first sheet if PJM ships a single unnamed sheet.
     if not candidate_sheets:
