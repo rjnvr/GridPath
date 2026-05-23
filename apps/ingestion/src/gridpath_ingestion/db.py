@@ -32,6 +32,14 @@ TRACKED_FIELDS = [
     "owner_company",
 ]
 
+LOCATION_PROVENANCE_COLUMNS = {
+    "location_source": "text",
+    "location_confidence": "text",
+    "address": "text",
+    "point_of_interconnection": "text",
+    "location_notes": "text",
+}
+
 
 def value_for_sql(value: Any) -> Any:
     if isinstance(value, Decimal):
@@ -203,6 +211,12 @@ def _complete_source_report(
     )
 
 
+def _ensure_project_location_columns(cursor: psycopg.Cursor) -> None:
+    """Keep ingestion compatible with databases created before provenance columns."""
+    for column, column_type in LOCATION_PROVENANCE_COLUMNS.items():
+        cursor.execute(f"alter table projects add column if not exists {column} {column_type}")
+
+
 def _insert_event(
     cursor: psycopg.Cursor,
     project_id: str,
@@ -271,6 +285,7 @@ def upsert_projects(
         "errors": 0,
     }
     with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+        _ensure_project_location_columns(cursor)
         source_report_id = None
         if source_report is not None:
             source_report_id, skipped = _begin_source_report(
