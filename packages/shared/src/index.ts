@@ -4,7 +4,71 @@
 export const SUPPORTED_ISOS = ["ERCOT", "CAISO", "PJM", "MISO", "SPP"] as const
 export type SupportedIso = (typeof SUPPORTED_ISOS)[number]
 
-export type FuelType = "solar" | "wind" | "storage" | "gas" | string
+export const CANONICAL_FUEL_TYPES = ["solar", "wind", "storage", "gas", "hydro", "other"] as const
+export type CanonicalFuelType = (typeof CANONICAL_FUEL_TYPES)[number]
+
+export const CANONICAL_PROJECT_STATUSES = [
+  "Active",
+  "Withdrawn",
+  "Energized",
+  "Completed",
+  "Cancelled",
+  "Suspended",
+  "Inactive"
+] as const
+export type CanonicalProjectStatus = (typeof CANONICAL_PROJECT_STATUSES)[number]
+
+export type FuelType = CanonicalFuelType | string
+
+function normalizedToken(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+}
+
+export function normalizeFuelType(value: string | null | undefined): CanonicalFuelType | null {
+  if (!value) return null
+  const token = normalizedToken(value)
+  if (!token) return null
+
+  if (/\b(sol|solar|pv|photovoltaic|photovoltaics)\b/.test(token)) return "solar"
+  if (/\b(win|wind)\b/.test(token)) return "wind"
+  if (/\b(bess|battery|batteries|storage|stor|ess|esr)\b/.test(token)) return "storage"
+  if (/\b(gas|natural gas|nat gas|ng|ccgt|cc|ct|combustion turbine|simple cycle|combined cycle)\b/.test(token)) {
+    return "gas"
+  }
+  if (/\b(hydro|hydroelectric|water)\b/.test(token)) return "hydro"
+
+  return "other"
+}
+
+export function formatFuelType(value: string | null | undefined): string | null {
+  const normalized = normalizeFuelType(value)
+  if (!normalized) return null
+  return normalized
+}
+
+export function normalizeProjectStatus(
+  value: string | null | undefined
+): CanonicalProjectStatus | null {
+  if (!value) return null
+  const token = normalizedToken(value)
+  if (!token) return null
+
+  if (/^(w|wd)$/.test(token) || /\b(withdrawn|withdraw|withdrew)\b/.test(token)) return "Withdrawn"
+  if (/\b(cancelled|canceled|cancel|terminated|termination)\b/.test(token)) return "Cancelled"
+  if (/\b(suspended|suspension|on hold|paused)\b/.test(token)) return "Suspended"
+  if (/\b(inactive|retired|deactivated|abandoned|expired)\b/.test(token)) return "Inactive"
+  if (/\b(energized|in service|commercial operation|operational|online|cod|is done)\b/.test(token)) {
+    return "Energized"
+  }
+  if (/\b(completed|complete|closed|done)\b/.test(token)) return "Completed"
+
+  return "Active"
+}
 
 export type ProjectChange = {
   id: string

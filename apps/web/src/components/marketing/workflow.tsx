@@ -1,8 +1,9 @@
+import { SUPPORTED_ISO_LABEL } from "@/lib/iso-format"
+
 const STEPS = [
   {
     title: "Ingest",
-    body:
-      "Daily pulls of the ERCOT GIS workbook and CAISO public queue report — no scrapers, no copy-paste."
+    body: `Daily pulls from public queue sources across ${SUPPORTED_ISO_LABEL} — no scrapers, no copy-paste.`
   },
   {
     title: "Normalize",

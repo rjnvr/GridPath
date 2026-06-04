@@ -1,4 +1,5 @@
 import type { Watchlist, WatchlistFilter } from "@gridpath/shared"
+import { normalizeFuelType, SUPPORTED_ISOS } from "@gridpath/shared"
 
 import { getSql } from "@/lib/db"
 
@@ -28,7 +29,7 @@ function mapWatchlist(row: WatchlistRow): Watchlist {
     name: row.name,
     filter: {
       iso: row.iso,
-      fuelType: row.fuel_type,
+      fuelType: normalizeFuelType(row.fuel_type),
       phase: row.phase,
       mwBucket: row.mw_bucket,
       ownerCompany: row.owner_company
@@ -48,9 +49,12 @@ function normalizeFilterValue(value: string | null | undefined): string | null {
 }
 
 export function normalizeFilter(input: Partial<WatchlistFilter>): WatchlistFilter {
+  const normalizedIso = normalizeFilterValue(input.iso)
   return {
-    iso: normalizeFilterValue(input.iso),
-    fuelType: normalizeFilterValue(input.fuelType),
+    iso: normalizedIso && SUPPORTED_ISOS.includes(normalizedIso as (typeof SUPPORTED_ISOS)[number])
+      ? normalizedIso
+      : null,
+    fuelType: normalizeFuelType(input.fuelType),
     phase: normalizeFilterValue(input.phase),
     mwBucket: normalizeFilterValue(input.mwBucket),
     ownerCompany: normalizeFilterValue(input.ownerCompany)

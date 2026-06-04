@@ -18,10 +18,10 @@ const PHASES = [
 const ARRIVALS = [
   { id: "ER-2814", iso: "ERCOT", name: "Bluebonnet Storage", mw: 320, fuel: "BESS" },
   { id: "CA-7710", iso: "CAISO", name: "Sierra Solar", mw: 480, fuel: "Solar" },
-  { id: "ER-2851", iso: "ERCOT", name: "Lone Star Wind", mw: 612, fuel: "Wind" },
-  { id: "CA-7724", iso: "CAISO", name: "Mojave Hyperscale", mw: 250, fuel: "Load" },
-  { id: "ER-2863", iso: "ERCOT", name: "Coastal Storage", mw: 410, fuel: "BESS" },
-  { id: "CA-7741", iso: "CAISO", name: "Tehachapi Wind II", mw: 285, fuel: "Wind" }
+  { id: "PJ-1042", iso: "PJM", name: "Keystone Solar", mw: 430, fuel: "Solar" },
+  { id: "MI-6038", iso: "MISO", name: "Riverbend Wind", mw: 720, fuel: "Wind" },
+  { id: "SP-2217", iso: "SPP", name: "Prairie BESS", mw: 310, fuel: "BESS" },
+  { id: "PJ-1088", iso: "PJM", name: "Dominion Data Campus", mw: 960, fuel: "Load" }
 ]
 
 function fuelColor(fuel: string) {
@@ -248,6 +248,9 @@ function FeedPanel({
             className="flex items-center gap-2 rounded border border-border/60 bg-card/60 px-2 py-1.5 text-xs"
           >
             <span className="font-mono text-[10px] text-muted-foreground">{row.id}</span>
+            <span className="rounded border border-border bg-background px-1.5 py-0 text-[10px] text-muted-foreground">
+              {row.iso}
+            </span>
             <span className="flex-1 truncate">{row.name}</span>
             <span className={`rounded border px-1.5 py-0 text-[10px] ${fuelColor(row.fuel)}`}>
               {row.fuel}
