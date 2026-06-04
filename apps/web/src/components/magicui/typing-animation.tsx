@@ -20,7 +20,7 @@ export function TypingAnimation({
   pauseMs = 1400
 }: TypingAnimationProps) {
   const [phraseIndex, setPhraseIndex] = useState(0)
-  const [characterIndex, setCharacterIndex] = useState(0)
+  const [characterIndex, setCharacterIndex] = useState(() => phrases[0]?.length ?? 0)
   const [isDeleting, setIsDeleting] = useState(false)
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
 

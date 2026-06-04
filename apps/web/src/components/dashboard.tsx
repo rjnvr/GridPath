@@ -7,6 +7,7 @@ import type {
   QueueEventSeverity,
   Substation
 } from "@gridpath/shared"
+import { normalizeFuelType, SUPPORTED_ISOS } from "@gridpath/shared"
 import {
   type ColumnDef,
   flexRender,
@@ -140,8 +141,8 @@ type MapMode = "normal" | "fullscreen"
 const MAP_DEFAULT_HEIGHT = 620
 const MAP_VIEW_BOUNDS = {
   all: [
-    [-124.8, 25.2],
-    [-93.2, 42.2]
+    [-124.8, 24.0],
+    [-66.0, 50.0]
   ],
   ERCOT: [
     [-107.0, 25.5],
@@ -150,6 +151,18 @@ const MAP_VIEW_BOUNDS = {
   CAISO: [
     [-124.8, 32.0],
     [-113.8, 42.2]
+  ],
+  PJM: [
+    [-91.0, 35.0],
+    [-73.0, 43.5]
+  ],
+  MISO: [
+    [-97.5, 29.0],
+    [-82.0, 49.5]
+  ],
+  SPP: [
+    [-106.0, 31.0],
+    [-88.0, 49.5]
   ]
 } satisfies Record<string, [[number, number], [number, number]]>
 
@@ -419,15 +432,7 @@ function tileStyle() {
 }
 
 function normalizeFuelKey(value: string | null | undefined): keyof typeof fuelColors {
-  const normalized = value?.toLowerCase() ?? ""
-  if (normalized.includes("solar")) return "solar"
-  if (normalized.includes("wind")) return "wind"
-  if (normalized.includes("storage") || normalized.includes("battery") || normalized.includes("bess")) {
-    return "storage"
-  }
-  if (normalized.includes("gas")) return "gas"
-  if (normalized.includes("hydro")) return "hydro"
-  return "other"
+  return normalizeFuelType(value) ?? "other"
 }
 
 function fuelMarkerImage(fuel: keyof typeof fuelColors): ImageData {
@@ -586,8 +591,8 @@ function fallbackFuelMarkerImage(fuel: keyof typeof fuelColors): ImageData {
 }
 
 function mapBoundsForIso(iso: string): [[number, number], [number, number]] {
-  if (iso === "ERCOT" || iso === "CAISO") {
-    return MAP_VIEW_BOUNDS[iso]
+  if (iso in MAP_VIEW_BOUNDS) {
+    return MAP_VIEW_BOUNDS[iso as keyof typeof MAP_VIEW_BOUNDS]
   }
   return MAP_VIEW_BOUNDS.all
 }
@@ -695,7 +700,7 @@ function filterFromSearchParams(params: URLSearchParams): FilterState {
   const iso = params.get("iso")
   const mw = params.get("mw")
   return {
-    iso: iso === "ERCOT" || iso === "CAISO" ? iso : "all",
+    iso: iso && SUPPORTED_ISOS.includes(iso as (typeof SUPPORTED_ISOS)[number]) ? iso : "all",
     fuelType: params.get("fuel") ?? "all",
     phase: params.get("phase") ?? "all",
     status: params.get("status") ?? "all",
@@ -1444,7 +1449,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
               </motion.div>
               {initialData.projects.length === 0 ? (
                 <div className="absolute left-6 bottom-6 rounded-md border border-border bg-card/90 px-4 py-3 text-sm text-muted-foreground shadow-md backdrop-blur">
-                  Set <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">DATABASE_URL</code>, run migrations, and ingest ERCOT data to populate the map.
+                  Set <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">DATABASE_URL</code>, run migrations, and ingest supported ISO data to populate the map.
                 </div>
               ) : null}
             </div>
@@ -1527,8 +1532,11 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                   className="h-10 rounded-md border border-input bg-background px-3 text-sm"
                 >
                   <option value="all">All ISOs</option>
-                  <option value="ERCOT">ERCOT</option>
-                  <option value="CAISO">CAISO</option>
+                  {SUPPORTED_ISOS.map((iso) => (
+                    <option key={iso} value={iso}>
+                      {iso}
+                    </option>
+                  ))}
                 </select>
                 <select
                   value={filters.status}
@@ -1610,8 +1618,11 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                   className="h-10 rounded-md border border-input bg-background px-3 text-sm"
                 >
                   <option value="all">All ISOs</option>
-                  <option value="ERCOT">ERCOT</option>
-                  <option value="CAISO">CAISO</option>
+                  {SUPPORTED_ISOS.map((iso) => (
+                    <option key={iso} value={iso}>
+                      {iso}
+                    </option>
+                  ))}
                 </select>
                 <select
                   value={eventFilters.severity}
@@ -1890,7 +1901,7 @@ function ProjectGroupDrawer({
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: 32, opacity: 0 }}
       transition={{ duration: 0.22, ease: "easeOut" }}
-      className="fixed right-0 top-0 z-20 h-screen w-[460px] border-l border-border bg-card shadow-2xl"
+      className="fixed right-0 top-0 z-20 flex h-screen w-full max-w-[460px] flex-col border-l border-border bg-card shadow-2xl"
     >
       <div className="flex items-start justify-between gap-3 border-b border-border p-5">
         <div className="min-w-0">
@@ -1917,7 +1928,7 @@ function ProjectGroupDrawer({
           <X size={16} />
         </button>
       </div>
-      <div className="space-y-2 overflow-y-auto p-5">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-5">
         {projects.map((project) => {
           const FuelIcon = fuelIconFor(project.fuelType)
           const fuelTone = fuelTokenClassFor(project.fuelType)

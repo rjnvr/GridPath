@@ -19,7 +19,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "GridPath — Interconnection queue intelligence",
-  description: "Track every project in the ERCOT and CAISO interconnection queues, with field-level change history."
+  description:
+    "Track every project across ERCOT, CAISO, PJM, MISO, and SPP interconnection queues, with field-level change history."
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

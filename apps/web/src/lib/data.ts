@@ -8,6 +8,7 @@ import type {
   HeadroomNearbyProject,
   HeadroomReport,
   HeadroomScore,
+  HealthBreakdown,
   HealthData,
   SubstationDetailData,
   IsoCoverage,
@@ -22,13 +23,21 @@ import type {
   SourceReportHealth,
   Substation
 } from "@gridpath/shared"
-import { SUPPORTED_ISOS } from "@gridpath/shared"
+import { normalizeFuelType, normalizeProjectStatus, SUPPORTED_ISOS } from "@gridpath/shared"
 
 import { getSql } from "@/lib/db"
 
 // Mutable copy so the Neon serverless driver can bind it as a Postgres array
 // parameter (it doesn't accept readonly arrays from `as const`).
 const SUPPORTED_ISO_LIST = [...SUPPORTED_ISOS] as string[]
+
+function displayFuelType(value: string | null | undefined): string | null {
+  return normalizeFuelType(value)
+}
+
+function displayProjectStatus(value: string | null | undefined): string | null {
+  return normalizeProjectStatus(value)
+}
 
 type ProjectRow = {
   id: string
@@ -256,7 +265,7 @@ function mapProject(row: ProjectRow, changes: ProjectChange[], events: QueueEven
     queueId: row.queue_id,
     projectName: row.project_name,
     mwRequested: numberOrNull(row.mw_requested),
-    fuelType: row.fuel_type,
+    fuelType: displayFuelType(row.fuel_type),
     county: row.county,
     state: row.state,
     lat: numberOrNull(row.lat),
@@ -267,7 +276,7 @@ function mapProject(row: ProjectRow, changes: ProjectChange[], events: QueueEven
     pointOfInterconnection: row.point_of_interconnection,
     locationNotes: row.location_notes,
     currentPhase: row.current_phase,
-    currentStatus: row.current_status,
+    currentStatus: displayProjectStatus(row.current_status),
     filedDate: toDateString(row.filed_date),
     iaSignedDate: toDateString(row.ia_signed_date),
     energizedDate: toDateString(row.energized_date),
@@ -306,7 +315,7 @@ function mapProjectSnapshot(row: ProjectSnapshotRow): ProjectSnapshot {
     snapshotDate: toDateString(row.snapshot_date) ?? "",
     capturedAt: toIsoString(row.captured_at) ?? "",
     currentPhase: row.current_phase,
-    currentStatus: row.current_status,
+    currentStatus: displayProjectStatus(row.current_status),
     mwRequested: numberOrNull(row.mw_requested),
     sourceUrl: row.source_url,
     sourceName: row.source_name
@@ -606,6 +615,58 @@ function toMonthString(value: Date | string): string {
   return toIsoString(value)?.slice(0, 7) ?? String(value).slice(0, 7)
 }
 
+function aggregateBreakdownRows(
+  rows: BreakdownRow[],
+  normalizeLabel: (value: string | null | undefined) => string | null,
+  fallbackLabel: string
+): HealthBreakdown[] {
+  const totals = new Map<string, HealthBreakdown>()
+  for (const row of rows) {
+    const label = normalizeLabel(row.label) ?? fallbackLabel
+    const key = `${row.iso}|${label}`
+    const existing = totals.get(key)
+    if (existing) {
+      existing.count += countValue(row.count)
+    } else {
+      totals.set(key, {
+        iso: row.iso,
+        label,
+        count: countValue(row.count)
+      })
+    }
+  }
+  return Array.from(totals.values()).sort(
+    (a, b) => a.iso.localeCompare(b.iso) || b.count - a.count || a.label.localeCompare(b.label)
+  )
+}
+
+function aggregateFuelMixRows(rows: FuelMixTrendRow[]): FuelMixTrend[] {
+  const totals = new Map<string, FuelMixTrend>()
+  for (const row of rows) {
+    const month = toMonthString(row.month)
+    const fuelType = displayFuelType(row.fuel_type) ?? "other"
+    const key = `${month}|${row.iso}|${fuelType}`
+    const existing = totals.get(key)
+    if (existing) {
+      existing.projectCount += countValue(row.project_count)
+    } else {
+      totals.set(key, {
+        month,
+        iso: row.iso,
+        fuelType,
+        projectCount: countValue(row.project_count)
+      })
+    }
+  }
+  return Array.from(totals.values()).sort(
+    (a, b) =>
+      a.month.localeCompare(b.month) ||
+      a.iso.localeCompare(b.iso) ||
+      b.projectCount - a.projectCount ||
+      a.fuelType.localeCompare(b.fuelType)
+  )
+}
+
 function coverageLabel(iso: string): string {
   if (iso === "ERCOT") {
     return "12+ months official ERCOT GIS reports"
@@ -782,12 +843,7 @@ export async function getAnalysisData(): Promise<AnalysisData> {
           energizedCount: countValue(row.energized_count)
         })
       ),
-      fuelMix: (fuelMixRows as FuelMixTrendRow[]).map((row): FuelMixTrend => ({
-        month: toMonthString(row.month),
-        iso: row.iso,
-        fuelType: row.fuel_type ?? "unknown",
-        projectCount: countValue(row.project_count)
-      })),
+      fuelMix: aggregateFuelMixRows(fuelMixRows as FuelMixTrendRow[]),
       recentChanges: (recentRows as RecentChangeRow[]).map(mapRecentChange)
     }
   } catch (error) {
@@ -929,11 +985,11 @@ export async function getHealthData(): Promise<HealthData> {
       label: row.label ?? "Unknown",
       count: countValue(row.count)
     })),
-    fuelCounts: (fuelRows as BreakdownRow[]).map((row) => ({
-      iso: row.iso,
-      label: row.label ?? "unknown",
-      count: countValue(row.count)
-    })),
+    fuelCounts: aggregateBreakdownRows(
+      fuelRows as BreakdownRow[],
+      (value) => displayFuelType(value),
+      "other"
+    ),
     recentChanges: (changeRows as RecentChangeRow[]).map(mapRecentChange),
     latestSourceReports: eventHealth.latestSourceReports,
     failedSourceReports: eventHealth.failedSourceReports,
@@ -978,6 +1034,29 @@ type HeadroomNearbyProjectRow = {
   lat: string | number | null
   lng: string | number | null
   distance_miles: string | number | null
+}
+
+function aggregateHeadroomFuelRows(rows: HeadroomFuelRow[]): HeadroomFuelBreakdown[] {
+  const totals = new Map<string, HeadroomFuelBreakdown>()
+  for (const row of rows) {
+    const fuelType = displayFuelType(row.fuel_type) ?? "other"
+    const existing = totals.get(fuelType)
+    if (existing) {
+      existing.projectCount += countValue(row.project_count)
+      existing.mwQueued += numberOrNull(row.mw_queued) ?? 0
+      existing.mwEnergized += numberOrNull(row.mw_energized) ?? 0
+    } else {
+      totals.set(fuelType, {
+        fuelType,
+        projectCount: countValue(row.project_count),
+        mwQueued: numberOrNull(row.mw_queued) ?? 0,
+        mwEnergized: numberOrNull(row.mw_energized) ?? 0
+      })
+    }
+  }
+  return Array.from(totals.values()).sort(
+    (a, b) => b.mwQueued - a.mwQueued || b.projectCount - a.projectCount || a.fuelType.localeCompare(b.fuelType)
+  )
 }
 
 function computeHeadroomScore(mwQueued: number, mwEnergized: number): {
@@ -1153,12 +1232,7 @@ export async function getHeadroomReport(
     const projectsInArea = countValue(aggregate?.projects_in_area ?? 0)
     const { score, rationale } = computeHeadroomScore(mwQueued, mwEnergized)
 
-    const fuelBreakdown: HeadroomFuelBreakdown[] = (fuelRows as HeadroomFuelRow[]).map((row) => ({
-      fuelType: row.fuel_type ?? "unknown",
-      projectCount: countValue(row.project_count),
-      mwQueued: numberOrNull(row.mw_queued) ?? 0,
-      mwEnergized: numberOrNull(row.mw_energized) ?? 0
-    }))
+    const fuelBreakdown = aggregateHeadroomFuelRows(fuelRows as HeadroomFuelRow[])
 
     const nearbySubstations = (substationRows as NearbySubstationRow[]).map(mapNearbySubstation)
 
@@ -1168,10 +1242,10 @@ export async function getHeadroomReport(
         iso: row.iso,
         queueId: row.queue_id,
         projectName: row.project_name,
-        fuelType: row.fuel_type,
+        fuelType: displayFuelType(row.fuel_type),
         mwRequested: numberOrNull(row.mw_requested),
         currentPhase: row.current_phase,
-        currentStatus: row.current_status,
+        currentStatus: displayProjectStatus(row.current_status),
         distanceMiles: numberOrNull(row.distance_miles),
         lat: numberOrNull(row.lat),
         lng: numberOrNull(row.lng)
@@ -1349,17 +1423,7 @@ export async function getSubstationDetail(
       mw_energized: string | number | null
     }>)[0]
 
-    const fuelBreakdown = (fuelRows as Array<{
-      fuel_type: string | null
-      project_count: string | number
-      mw_queued: string | number | null
-      mw_energized: string | number | null
-    }>).map((row) => ({
-      fuelType: row.fuel_type ?? "unknown",
-      projectCount: countValue(row.project_count),
-      mwQueued: numberOrNull(row.mw_queued) ?? 0,
-      mwEnergized: numberOrNull(row.mw_energized) ?? 0
-    }))
+    const fuelBreakdown = aggregateHeadroomFuelRows(fuelRows as HeadroomFuelRow[])
 
     const nearbyProjects = (nearbyProjectRows as Array<{
       id: string
@@ -1376,10 +1440,10 @@ export async function getSubstationDetail(
       iso: row.iso,
       queueId: row.queue_id,
       projectName: row.project_name,
-      fuelType: row.fuel_type,
+      fuelType: displayFuelType(row.fuel_type),
       mwRequested: numberOrNull(row.mw_requested),
       currentPhase: row.current_phase,
-      currentStatus: row.current_status,
+      currentStatus: displayProjectStatus(row.current_status),
       distanceMiles: numberOrNull(row.distance_miles)
     }))
 

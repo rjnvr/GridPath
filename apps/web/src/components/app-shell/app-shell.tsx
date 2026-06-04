@@ -33,7 +33,7 @@ export function AppShell({ children, user }: AppShellProps) {
                   <span className="truncate text-sm font-semibold tracking-tight">GridPath</span>
                 </div>
                 <p className="hidden truncate text-xs text-muted-foreground sm:block">
-                  ERCOT + CAISO interconnection queue intelligence
+                  Multi-ISO interconnection queue intelligence
                 </p>
               </div>
             </div>

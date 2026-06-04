@@ -8,13 +8,12 @@ import type {
   MonthlyProjectTrend,
   RecentChange
 } from "@gridpath/shared"
+import { SUPPORTED_ISOS } from "@gridpath/shared"
 
 import { ActiveMwHeatmap } from "@/components/analysis/active-mw-heatmap"
 import { MetricBar } from "@/components/analysis/metric-bar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-
-const DEFAULT_ISOS = ["ERCOT", "CAISO"]
 
 function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleDateString() : "Not captured yet"
@@ -39,8 +38,8 @@ export function AnalysisDashboard({ data }: { data: AnalysisData }) {
       ).sort(),
     [data]
   )
-  const [selectedIsos, setSelectedIsos] = useState(() =>
-    DEFAULT_ISOS.filter((iso) => availableIsos.includes(iso)).slice(0, 2)
+  const [selectedIsos, setSelectedIsos] = useState<string[]>(() =>
+    SUPPORTED_ISOS.filter((iso) => availableIsos.includes(iso))
   )
   const selectedIsoSet = useMemo(() => new Set(selectedIsos), [selectedIsos])
   const filteredData = useMemo(
@@ -58,9 +57,6 @@ export function AnalysisDashboard({ data }: { data: AnalysisData }) {
     setSelectedIsos((current) => {
       if (current.includes(iso)) {
         return current.filter((value) => value !== iso)
-      }
-      if (current.length >= 2) {
-        return [current[1], iso]
       }
       return [...current, iso]
     })
@@ -95,7 +91,7 @@ export function AnalysisDashboard({ data }: { data: AnalysisData }) {
 
       {selectedIsos.length === 0 ? (
         <p className="rounded-md border border-dashed border-border p-6 text-sm text-muted-foreground">
-          Choose up to two ISOs to populate the analysis views.
+          Choose at least one ISO to populate the analysis views.
         </p>
       ) : (
         <>
@@ -120,9 +116,7 @@ function CoverageCards({ data, selectedIsos }: { data: AnalysisData; selectedIso
   const coverageByIso = new Map(data.coverage.map((coverage) => [coverage.iso, coverage]))
   const cards = selectedIsos.map((iso) => coverageByIso.get(iso) ?? {
     iso,
-    label: iso === "ERCOT"
-      ? "12+ months official ERCOT GIS reports"
-      : "Official CAISO snapshots from first capture date",
+    label: `Official ${iso} queue snapshots`,
     firstReportDate: null,
     latestReportDate: null,
     reportCount: 0,
@@ -130,7 +124,7 @@ function CoverageCards({ data, selectedIsos }: { data: AnalysisData; selectedIso
   })
 
   return (
-    <section className="grid gap-4 md:grid-cols-2">
+    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {cards.map((coverage) => (
         <Card key={coverage.iso} className="rounded-md">
           <CardHeader>

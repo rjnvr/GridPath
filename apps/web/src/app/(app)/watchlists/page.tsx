@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { auth } from "@/lib/auth"
 import { WatchlistsNotProvisionedError, listWatchlists } from "@/lib/watchlists"
 import type { Watchlist } from "@gridpath/shared"
+import { SUPPORTED_ISOS } from "@gridpath/shared"
 
 import { createWatchlistAction, deleteWatchlistAction, updateWatchlistEmailAction } from "./actions"
 
@@ -118,8 +119,11 @@ export default async function WatchlistsPage() {
                     className="mt-1 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
                   >
                     <option value="">All</option>
-                    <option value="ERCOT">ERCOT</option>
-                    <option value="CAISO">CAISO</option>
+                    {SUPPORTED_ISOS.map((iso) => (
+                      <option key={iso} value={iso}>
+                        {iso}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>

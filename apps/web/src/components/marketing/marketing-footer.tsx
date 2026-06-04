@@ -1,6 +1,7 @@
 import Link from "next/link"
 
 import { LogoMark } from "@/components/brand/logo-mark"
+import { SUPPORTED_ISO_LABEL } from "@/lib/iso-format"
 
 export function MarketingFooter() {
   return (
@@ -9,7 +10,7 @@ export function MarketingFooter() {
         <div className="flex items-center gap-2">
           <LogoMark className="h-5 w-5" />
           <span className="text-foreground">GridPath</span>
-          <span className="text-xs">· data sourced from ERCOT and CAISO public reports</span>
+          <span className="text-xs">· data sourced from {SUPPORTED_ISO_LABEL} public reports</span>
         </div>
         <nav className="flex gap-6" aria-label="Footer">
           <Link href="/login" className="hover:text-foreground">Sign in</Link>

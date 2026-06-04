@@ -1,13 +1,14 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import type { SupportedIso } from "@gridpath/shared"
 
-type Node = {
+type TopologyNode = {
   id: string
   x: number
   y: number
   label: string
-  iso: "ERCOT" | "CAISO"
+  iso: SupportedIso
   mw: number
   phase: "Queued" | "Studied" | "Energized"
 }
@@ -18,44 +19,121 @@ type Link = {
   delay: number
 }
 
-// Stylized positions for ERCOT (right cluster) and CAISO (left cluster) projects.
+type Region = {
+  iso: SupportedIso
+  x: number
+  y: number
+  rx: number
+  ry: number
+  fill: string
+  labelX: number
+  labelY: number
+}
+
+const REGIONS: Region[] = [
+  {
+    iso: "CAISO",
+    x: 125,
+    y: 205,
+    rx: 120,
+    ry: 126,
+    fill: "hsl(var(--primary) / 0.08)",
+    labelX: 48,
+    labelY: 58
+  },
+  {
+    iso: "ERCOT",
+    x: 285,
+    y: 244,
+    rx: 104,
+    ry: 110,
+    fill: "hsl(var(--fuel-solar) / 0.08)",
+    labelX: 244,
+    labelY: 365
+  },
+  {
+    iso: "SPP",
+    x: 328,
+    y: 126,
+    rx: 82,
+    ry: 80,
+    fill: "hsl(var(--fuel-storage) / 0.08)",
+    labelX: 308,
+    labelY: 44
+  },
+  {
+    iso: "MISO",
+    x: 445,
+    y: 250,
+    rx: 94,
+    ry: 114,
+    fill: "hsl(var(--fuel-wind) / 0.08)",
+    labelX: 420,
+    labelY: 365
+  },
+  {
+    iso: "PJM",
+    x: 515,
+    y: 155,
+    rx: 86,
+    ry: 92,
+    fill: "hsl(var(--fuel-gas) / 0.08)",
+    labelX: 502,
+    labelY: 58
+  }
+]
+
 // Coordinates are tuned for a 600x420 viewBox.
-const NODES: Node[] = [
-  { id: "ca-1", x: 90, y: 130, label: "Tesla Megapack", iso: "CAISO", mw: 730, phase: "Studied" },
-  { id: "ca-2", x: 60, y: 210, label: "Vasco Winds", iso: "CAISO", mw: 412, phase: "Queued" },
-  { id: "ca-3", x: 130, y: 280, label: "Topaz Solar", iso: "CAISO", mw: 1100, phase: "Energized" },
-  { id: "ca-4", x: 180, y: 170, label: "Mojave BESS", iso: "CAISO", mw: 580, phase: "Studied" },
-  { id: "hub-w", x: 230, y: 230, label: "CAISO Hub", iso: "CAISO", mw: 0, phase: "Energized" },
-  { id: "tx-1", x: 380, y: 130, label: "Panhandle Wind", iso: "ERCOT", mw: 890, phase: "Queued" },
-  { id: "tx-2", x: 450, y: 210, label: "Permian Solar", iso: "ERCOT", mw: 1450, phase: "Studied" },
-  { id: "tx-3", x: 530, y: 170, label: "Gulf Coast BESS", iso: "ERCOT", mw: 620, phase: "Queued" },
-  { id: "tx-4", x: 500, y: 290, label: "Houston Hyperscale", iso: "ERCOT", mw: 1820, phase: "Energized" },
-  { id: "hub-e", x: 400, y: 240, label: "ERCOT Hub", iso: "ERCOT", mw: 0, phase: "Energized" }
+const NODES: TopologyNode[] = [
+  { id: "ca-1", x: 70, y: 132, label: "Tesla Megapack", iso: "CAISO", mw: 730, phase: "Studied" },
+  { id: "ca-2", x: 118, y: 205, label: "Vasco Winds", iso: "CAISO", mw: 412, phase: "Queued" },
+  { id: "ca-3", x: 180, y: 166, label: "Mojave BESS", iso: "CAISO", mw: 580, phase: "Studied" },
+  { id: "hub-ca", x: 132, y: 270, label: "CAISO Hub", iso: "CAISO", mw: 0, phase: "Energized" },
+  { id: "er-1", x: 246, y: 272, label: "Bluebonnet Storage", iso: "ERCOT", mw: 640, phase: "Queued" },
+  { id: "er-2", x: 336, y: 242, label: "Permian Solar", iso: "ERCOT", mw: 1450, phase: "Studied" },
+  { id: "er-3", x: 318, y: 315, label: "Houston Hyperscale", iso: "ERCOT", mw: 1820, phase: "Energized" },
+  { id: "hub-er", x: 288, y: 210, label: "ERCOT Hub", iso: "ERCOT", mw: 0, phase: "Energized" },
+  { id: "spp-1", x: 270, y: 116, label: "Panhandle Wind", iso: "SPP", mw: 890, phase: "Queued" },
+  { id: "spp-2", x: 360, y: 92, label: "Prairie BESS", iso: "SPP", mw: 310, phase: "Studied" },
+  { id: "hub-spp", x: 336, y: 156, label: "SPP Hub", iso: "SPP", mw: 0, phase: "Energized" },
+  { id: "miso-1", x: 402, y: 262, label: "Great Lakes Solar", iso: "MISO", mw: 515, phase: "Studied" },
+  { id: "miso-2", x: 466, y: 316, label: "Riverbend Wind", iso: "MISO", mw: 720, phase: "Queued" },
+  { id: "hub-miso", x: 444, y: 206, label: "MISO Hub", iso: "MISO", mw: 0, phase: "Energized" },
+  { id: "pjm-1", x: 500, y: 118, label: "Keystone Solar", iso: "PJM", mw: 430, phase: "Studied" },
+  { id: "pjm-2", x: 548, y: 190, label: "Dominion Data Campus", iso: "PJM", mw: 960, phase: "Queued" },
+  { id: "hub-pjm", x: 508, y: 246, label: "PJM Hub", iso: "PJM", mw: 0, phase: "Energized" }
 ]
 
 const LINKS: Link[] = [
-  { from: "ca-1", to: "hub-w", delay: 0 },
-  { from: "ca-2", to: "hub-w", delay: 0.4 },
-  { from: "ca-3", to: "hub-w", delay: 0.8 },
-  { from: "ca-4", to: "hub-w", delay: 1.2 },
-  { from: "tx-1", to: "hub-e", delay: 0.2 },
-  { from: "tx-2", to: "hub-e", delay: 0.6 },
-  { from: "tx-3", to: "hub-e", delay: 1.0 },
-  { from: "tx-4", to: "hub-e", delay: 1.4 },
-  { from: "hub-w", to: "hub-e", delay: 0.5 }
+  { from: "ca-1", to: "hub-ca", delay: 0 },
+  { from: "ca-2", to: "hub-ca", delay: 0.4 },
+  { from: "ca-3", to: "hub-ca", delay: 0.8 },
+  { from: "er-1", to: "hub-er", delay: 0.2 },
+  { from: "er-2", to: "hub-er", delay: 0.6 },
+  { from: "er-3", to: "hub-er", delay: 1.0 },
+  { from: "spp-1", to: "hub-spp", delay: 0.3 },
+  { from: "spp-2", to: "hub-spp", delay: 0.7 },
+  { from: "miso-1", to: "hub-miso", delay: 0.5 },
+  { from: "miso-2", to: "hub-miso", delay: 0.9 },
+  { from: "pjm-1", to: "hub-pjm", delay: 0.4 },
+  { from: "pjm-2", to: "hub-pjm", delay: 0.8 },
+  { from: "hub-ca", to: "hub-er", delay: 0.5 },
+  { from: "hub-er", to: "hub-spp", delay: 0.7 },
+  { from: "hub-spp", to: "hub-miso", delay: 0.9 },
+  { from: "hub-miso", to: "hub-pjm", delay: 1.1 }
 ]
 
 const TICKER_EVENTS = [
-  { time: "08:42", iso: "ERCOT", text: "Permian Solar -> Studied", tone: "positive" as const },
-  { time: "08:31", iso: "CAISO", text: "Tesla Megapack +120 MW", tone: "neutral" as const },
+  { time: "08:42", iso: "PJM", text: "Dominion Data Campus entered queue", tone: "neutral" as const },
+  { time: "08:31", iso: "MISO", text: "Great Lakes Solar +115 MW", tone: "neutral" as const },
   { time: "08:14", iso: "ERCOT", text: "Houston Hyperscale energized", tone: "positive" as const },
   { time: "07:58", iso: "CAISO", text: "Vasco Winds withdrew", tone: "negative" as const },
-  { time: "07:46", iso: "ERCOT", text: "Gulf Coast BESS IA signed", tone: "positive" as const }
+  { time: "07:46", iso: "SPP", text: "Prairie BESS advanced to study", tone: "positive" as const }
 ]
 
 const NODE_BY_ID = new Map(NODES.map((n) => [n.id, n]))
 
-function curvePath(a: Node, b: Node) {
+function curvePath(a: TopologyNode, b: TopologyNode) {
   const mx = (a.x + b.x) / 2
   const my = (a.y + b.y) / 2
   // Bow the line slightly above the midpoint for a transmission-line feel.
@@ -65,7 +143,7 @@ function curvePath(a: Node, b: Node) {
 
 export function GridTopology() {
   const [tickerIndex, setTickerIndex] = useState(0)
-  const [selectedNodeId, setSelectedNodeId] = useState("tx-4")
+  const [selectedNodeId, setSelectedNodeId] = useState("pjm-2")
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -82,17 +160,9 @@ export function GridTopology() {
         viewBox="0 0 600 420"
         className="relative h-full w-full"
         role="img"
-        aria-label="Animated map of ERCOT and CAISO interconnection projects flowing into regional hubs"
+        aria-label="Animated map of covered ISO interconnection projects flowing into regional hubs"
       >
         <defs>
-          <radialGradient id="caisoBlob" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="hsl(var(--primary) / 0.16)" />
-            <stop offset="100%" stopColor="hsl(var(--primary) / 0)" />
-          </radialGradient>
-          <radialGradient id="ercotBlob" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="hsl(var(--fuel-solar) / 0.14)" />
-            <stop offset="100%" stopColor="hsl(var(--fuel-solar) / 0)" />
-          </radialGradient>
           <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
             <stop offset="0%" stopColor="hsl(var(--border))" />
             <stop offset="50%" stopColor="hsl(var(--primary) / 0.65)" />
@@ -107,27 +177,28 @@ export function GridTopology() {
           </filter>
         </defs>
 
-        {/* Region blobs (stylized, not real geography) */}
-        <ellipse cx="130" cy="210" rx="135" ry="120" fill="url(#caisoBlob)" />
-        <ellipse cx="455" cy="220" rx="155" ry="130" fill="url(#ercotBlob)" />
-
-        {/* Region labels */}
-        <text
-          x="50"
-          y="60"
-          className="fill-muted-foreground"
-          style={{ fontSize: 11, letterSpacing: 2 }}
-        >
-          CAISO
-        </text>
-        <text
-          x="510"
-          y="60"
-          className="fill-muted-foreground"
-          style={{ fontSize: 11, letterSpacing: 2 }}
-        >
-          ERCOT
-        </text>
+        {/* Stylized ISO regions, not real geography. */}
+        {REGIONS.map((region) => (
+          <g key={region.iso}>
+            <ellipse
+              cx={region.x}
+              cy={region.y}
+              rx={region.rx}
+              ry={region.ry}
+              fill={region.fill}
+              stroke="hsl(var(--border) / 0.5)"
+              strokeWidth={1}
+            />
+            <text
+              x={region.labelX}
+              y={region.labelY}
+              className="fill-muted-foreground"
+              style={{ fontSize: 10, letterSpacing: 2 }}
+            >
+              {region.iso}
+            </text>
+          </g>
+        ))}
 
         {/* Transmission lines */}
         {LINKS.map((link) => {

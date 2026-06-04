@@ -1,6 +1,7 @@
 "use client"
 
 import type { DashboardData, GridProject } from "@gridpath/shared"
+import { SUPPORTED_ISOS } from "@gridpath/shared"
 import {
   type ColumnDef,
   flexRender,
@@ -199,8 +200,11 @@ export function ProjectSearch({ data }: { data: DashboardData }) {
             className="h-10 rounded-md border border-input bg-background px-3 text-sm"
           >
             <option value="all">All ISOs</option>
-            <option value="ERCOT">ERCOT</option>
-            <option value="CAISO">CAISO</option>
+            {SUPPORTED_ISOS.map((iso) => (
+              <option key={iso} value={iso}>
+                {iso}
+              </option>
+            ))}
           </select>
           <select
             value={filters.fuelType}

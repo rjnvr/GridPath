@@ -1,4 +1,5 @@
 import type { SVGProps } from "react"
+import { normalizeFuelType } from "@gridpath/shared"
 
 type FuelIconProps = SVGProps<SVGSVGElement> & { size?: number }
 
@@ -83,8 +84,8 @@ export const fuelIcons = {
 export type FuelKey = keyof typeof fuelIcons
 
 export function fuelIconFor(fuelType: string | null | undefined): typeof SolarIcon {
-  const key = (fuelType ?? "").toLowerCase()
-  if (key in fuelIcons) {
+  const key = normalizeFuelType(fuelType)
+  if (key && key in fuelIcons) {
     return fuelIcons[key as FuelKey]
   }
   return OtherFuelIcon
@@ -100,8 +101,8 @@ export const fuelTokenClass: Record<FuelKey, string> = {
 }
 
 export function fuelTokenClassFor(fuelType: string | null | undefined): string {
-  const key = (fuelType ?? "").toLowerCase()
-  if (key in fuelTokenClass) {
+  const key = normalizeFuelType(fuelType)
+  if (key && key in fuelTokenClass) {
     return fuelTokenClass[key as FuelKey]
   }
   return fuelTokenClass.other
