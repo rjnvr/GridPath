@@ -138,13 +138,14 @@ export function HeadroomExplorer({
   const mapRef = useRef<MapLibreMap | null>(null)
   const markerRef = useRef<Marker | null>(null)
   const radiusCircleAddedRef = useRef(false)
+  const radiusRef = useRef(initialRadius)
 
   const [radius, setRadius] = useState(initialRadius)
   const [latInput, setLatInput] = useState(initialReport?.center.lat.toFixed(4) ?? "")
   const [lngInput, setLngInput] = useState(initialReport?.center.lng.toFixed(4) ?? "")
+  const [selectedCenter, setSelectedCenter] = useState(initialReport?.center ?? null)
   const [isPending, setIsPending] = useState(false)
 
-  const center = useMemo(() => initialReport?.center ?? null, [initialReport])
   const heatmapGeoJson = useMemo(() => projectsToGeoJson(heatmapProjects), [heatmapProjects])
 
   const pushReport = useCallback(
@@ -159,6 +160,28 @@ export function HeadroomExplorer({
     [router]
   )
 
+  const analyzeLocation = useCallback(
+    (lat: number, lng: number, radiusMi: number) => {
+      setLatInput(lat.toFixed(4))
+      setLngInput(lng.toFixed(4))
+      setSelectedCenter({ lat, lng })
+      pushReport(lat, lng, radiusMi)
+    },
+    [pushReport]
+  )
+
+  useEffect(() => {
+    radiusRef.current = radius
+  }, [radius])
+
+  useEffect(() => {
+    if (!initialReport) return
+    setSelectedCenter(initialReport.center)
+    setLatInput(initialReport.center.lat.toFixed(4))
+    setLngInput(initialReport.center.lng.toFixed(4))
+    setRadius(initialReport.radiusMiles)
+  }, [initialReport])
+
   // Reset pending state when the URL actually changes
   useEffect(() => {
     setIsPending(false)
@@ -172,8 +195,8 @@ export function HeadroomExplorer({
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
       style: tileStyle(),
-      center: center ? [center.lng, center.lat] : [-99.35, 31.05],
-      zoom: center ? 8 : 4.5,
+      center: selectedCenter ? [selectedCenter.lng, selectedCenter.lat] : [-99.35, 31.05],
+      zoom: selectedCenter ? 8 : 4.5,
       minZoom: 2.7,
       maxZoom: 11,
       maxBounds: USA_BOUNDS
@@ -184,9 +207,7 @@ export function HeadroomExplorer({
     if (!readOnly) {
       map.on("click", (event) => {
         const { lng, lat } = event.lngLat
-        setLatInput(lat.toFixed(4))
-        setLngInput(lng.toFixed(4))
-        pushReport(lat, lng, radius)
+        analyzeLocation(lat, lng, radiusRef.current)
       })
     }
 
@@ -277,41 +298,44 @@ export function HeadroomExplorer({
   // Render the pin and radius circle when center/radius changes
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !center) return
+    if (!map || !selectedCenter) return
 
     if (markerRef.current) {
-      markerRef.current.setLngLat([center.lng, center.lat])
+      markerRef.current.setLngLat([selectedCenter.lng, selectedCenter.lat])
     } else {
       markerRef.current = new maplibregl.Marker({ color: "#22d3ee" })
-        .setLngLat([center.lng, center.lat])
+        .setLngLat([selectedCenter.lng, selectedCenter.lat])
         .addTo(map)
     }
 
     const apply = () => {
-      const radiusMeters = (initialReport?.radiusMiles ?? radius) * 1609.344
-      const ring = buildCircleGeoJson(center.lng, center.lat, radiusMeters)
-      if (radiusCircleAddedRef.current) {
-        const source = map.getSource("headroom-radius") as maplibregl.GeoJSONSource | undefined
-        source?.setData(ring)
+      const radiusMeters = radius * 1609.344
+      const ring = buildCircleGeoJson(selectedCenter.lng, selectedCenter.lat, radiusMeters)
+      const source = map.getSource("headroom-radius") as maplibregl.GeoJSONSource | undefined
+      if (source) {
+        source.setData(ring)
+        radiusCircleAddedRef.current = true
       } else {
-        if (!map.getSource("headroom-radius")) {
-          map.addSource("headroom-radius", { type: "geojson", data: ring })
-          map.addLayer({
-            id: "headroom-radius-fill",
-            type: "fill",
-            source: "headroom-radius",
-            paint: { "fill-color": "#22d3ee", "fill-opacity": 0.08 }
-          })
-          map.addLayer({
-            id: "headroom-radius-line",
-            type: "line",
-            source: "headroom-radius",
-            paint: { "line-color": "#22d3ee", "line-width": 1.5, "line-opacity": 0.7 }
-          })
-          radiusCircleAddedRef.current = true
-        }
+        map.addSource("headroom-radius", { type: "geojson", data: ring })
       }
-      map.easeTo({ center: [center.lng, center.lat], zoom: 8, duration: 600 })
+      if (!map.getLayer("headroom-radius-fill")) {
+        map.addLayer({
+          id: "headroom-radius-fill",
+          type: "fill",
+          source: "headroom-radius",
+          paint: { "fill-color": "#22d3ee", "fill-opacity": 0.08 }
+        })
+      }
+      if (!map.getLayer("headroom-radius-line")) {
+        map.addLayer({
+          id: "headroom-radius-line",
+          type: "line",
+          source: "headroom-radius",
+          paint: { "line-color": "#22d3ee", "line-width": 1.5, "line-opacity": 0.7 }
+        })
+      }
+      radiusCircleAddedRef.current = true
+      map.easeTo({ center: [selectedCenter.lng, selectedCenter.lat], zoom: 8, duration: 600 })
     }
 
     if (map.isStyleLoaded()) {
@@ -319,7 +343,7 @@ export function HeadroomExplorer({
     } else {
       map.once("load", apply)
     }
-  }, [center, radius, initialReport?.radiusMiles])
+  }, [selectedCenter, radius])
 
   const handleManualSubmit = useCallback(
     (event: React.FormEvent<HTMLFormElement>) => {
@@ -327,9 +351,9 @@ export function HeadroomExplorer({
       const lat = Number(latInput)
       const lng = Number(lngInput)
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
-      pushReport(lat, lng, radius)
+      analyzeLocation(lat, lng, radius)
     },
-    [latInput, lngInput, pushReport, radius]
+    [analyzeLocation, latInput, lngInput, radius]
   )
 
   return (
